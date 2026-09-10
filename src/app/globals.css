@@ -1,0 +1,178 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surfaces */
+  --color-canvas: #f4f5f7;
+  --color-surface: #ffffff;
+
+  /* Text */
+  --color-ink: #1c1e21;
+  --color-ink-soft: #6b7280;
+
+  /* Lines */
+  --color-hairline: #e5e7eb;
+
+  /* Primary (dark) — buttons, active states, key figures */
+  --color-indigo: #1c1e21;
+  --color-indigo-strong: #000000;
+
+  /* Pastel highlight families */
+  --color-peach: #fdebd8;
+  --color-peach-badge: #f5a25d;
+  --color-lavender: #e8e4f9;
+  --color-lavender-badge: #8b7fe8;
+  --color-mint: #dff6f0;
+  --color-mint-badge: #3dbda3;
+  --color-lime: #d9f99d;
+
+  /* Semantic */
+  --color-positive: #16a34a;
+  --color-draft-bg: #fef3c7;
+  --color-draft-ink: #92400e;
+  --color-archived-bg: #f3f4f6;
+  --color-archived-ink: #4b5563;
+  --color-danger-ink: #b91c1c;
+  --color-danger-line: #f0c9c9;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+
+  --radius-2xl: 1rem;
+}
+
+:root {
+  font-size: 17.6px;
+}
+
+html {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-lavender-badge) 30%, transparent);
+}
+
+/* Shared input baseline */
+.field {
+  width: 100%;
+  border: 1px solid var(--color-hairline);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--color-ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field:focus {
+  outline: none;
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ink) 12%, transparent);
+}
+.field::placeholder {
+  color: color-mix(in srgb, var(--color-ink) 36%, transparent);
+}
+
+table.grid-input input {
+  border-radius: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000 !important;
+  }
+  main {
+    background: #ffffff !important;
+  }
+  /* Drop the shell padding / max width so the sheet fills the page */
+  main > div {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  * {
+    box-shadow: none !important;
+  }
+
+  /* Legacy MANZA TEXTILE MILLS cost ledger — the only thing printed. */
+  .print-ledger {
+    display: block;
+    color: #000;
+    font-family: var(--font-sans);
+  }
+  .print-ledger,
+  .print-ledger * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .print-ledger .size-block {
+    break-inside: avoid;
+    padding: 10px 0;
+  }
+  .print-ledger .size-block + .size-block {
+    break-before: page;
+  }
+  .print-ledger .ledger-row {
+    display: flex;
+    gap: 22px;
+    align-items: flex-start;
+  }
+  .print-ledger .lr-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .print-ledger table {
+    border-collapse: collapse;
+  }
+  .print-ledger .ll {
+    min-width: 280px;
+  }
+  .print-ledger .lr {
+    min-width: 250px;
+  }
+  .print-ledger td,
+  .print-ledger th {
+    border: 1px solid #000 !important;
+    padding: 3px 10px;
+    font-size: 11px;
+    line-height: 1.35;
+    vertical-align: top;
+  }
+  .print-ledger th {
+    font-weight: 700;
+    text-align: left;
+  }
+  .print-ledger .v {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .print-ledger .title {
+    text-align: left;
+    font-weight: 700;
+    white-space: pre-line;
+  }
+  .print-ledger .hdr {
+    text-align: center;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .print-ledger .b {
+    font-weight: 700;
+  }
+  .print-ledger .hl {
+    background: #fff2b2 !important;
+  }
+}
