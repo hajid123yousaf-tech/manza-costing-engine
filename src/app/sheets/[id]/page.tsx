@@ -738,25 +738,25 @@ export default function CostSheetEditorPage() {
         }
       >
         {!isNew ? <StatusBadge status={status} /> : null}
-        <div className="flex items-center gap-3 print:hidden">
+        <div className="flex flex-wrap items-center gap-3 print:hidden">
           {!isNew ? (
             <>
               <Button
                 onClick={handleDuplicate}
                 disabled={duplicating}
-                className="px-3 py-1.5 text-[0.85rem]"
+                className="min-h-[44px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
               >
                 {duplicating ? "Duplicating…" : "Duplicate"}
               </Button>
               <Button
                 onClick={() => window.print()}
-                className="px-3 py-1.5 text-[0.85rem]"
+                className="min-h-[44px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
               >
                 Print
               </Button>
               <Button
                 onClick={handleExcel}
-                className="px-3 py-1.5 text-[0.85rem]"
+                className="min-h-[44px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
               >
                 Download Excel
               </Button>
@@ -764,7 +764,7 @@ export default function CostSheetEditorPage() {
           ) : null}
           <Link
             href="/sheets"
-            className="text-[0.9rem] font-medium text-ink-soft hover:text-ink"
+            className="flex min-h-[44px] items-center text-[0.9rem] font-medium text-ink-soft hover:text-ink md:min-h-0"
           >
             Back to list
           </Link>
@@ -853,7 +853,7 @@ export default function CostSheetEditorPage() {
               title={cat.title}
               description="Cost build-up — add every component that makes up the price per unit."
               action={
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <select
                     className="field w-24 print:hidden"
                     value={unit}
@@ -873,7 +873,7 @@ export default function CostSheetEditorPage() {
                   </select>
                   <Button
                     onClick={() => addFabric(cat.type)}
-                    className="px-3 py-1.5 text-[0.85rem] print:hidden"
+                    className="min-h-[44px] px-3 py-1.5 text-[0.85rem] print:hidden md:min-h-0"
                   >
                     Add row
                   </Button>
@@ -932,7 +932,7 @@ export default function CostSheetEditorPage() {
                         <td className="py-2 text-right print:hidden">
                           <button
                             onClick={() => removeFabric(rm.id)}
-                            className="rounded-lg border border-hairline px-2.5 py-1.5 text-[0.82rem] text-ink-soft hover:bg-canvas"
+                            className="min-h-[40px] rounded-lg border border-hairline px-2.5 py-1.5 text-[0.82rem] text-ink-soft hover:bg-canvas md:min-h-0"
                           >
                             Remove
                           </button>
@@ -977,7 +977,7 @@ export default function CostSheetEditorPage() {
             />
             <Button
               variant="primary"
-              className="px-3 py-1.5 text-[0.82rem]"
+              className="min-h-[40px] px-3 py-1.5 text-[0.82rem] md:min-h-0"
               disabled={savingSize || !editSizeName.trim()}
               onClick={saveSizeName}
             >
@@ -985,7 +985,7 @@ export default function CostSheetEditorPage() {
             </Button>
             <Button
               variant="danger"
-              className="px-3 py-1.5 text-[0.82rem]"
+              className="min-h-[40px] px-3 py-1.5 text-[0.82rem] md:min-h-0"
               disabled={savingSize}
               onClick={deactivateSize}
             >
@@ -993,7 +993,7 @@ export default function CostSheetEditorPage() {
             </Button>
             <Button
               variant="ghost"
-              className="px-3 py-1.5 text-[0.82rem]"
+              className="min-h-[40px] px-3 py-1.5 text-[0.82rem] md:min-h-0"
               onClick={() => setEditingSizeId(null)}
             >
               Cancel
@@ -1017,7 +1017,7 @@ export default function CostSheetEditorPage() {
                       {s.name}
                       <button
                         onClick={() => startEditSize(s)}
-                        className="rounded border border-hairline px-1 text-[0.7rem] text-ink-soft hover:bg-surface print:hidden"
+                        className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-hairline text-[0.7rem] text-ink-soft hover:bg-surface print:hidden md:min-h-0 md:min-w-0 md:px-1"
                         aria-label={`Edit ${s.name}`}
                         title="Rename or deactivate"
                       >
@@ -1028,7 +1028,7 @@ export default function CostSheetEditorPage() {
                 ))}
                 <th className="border border-hairline bg-canvas px-3 py-2 text-left print:hidden">
                   {addingSize ? (
-                    <span className="flex items-center gap-1">
+                    <span className="flex flex-wrap items-center gap-1">
                       <input
                         className="field w-28"
                         placeholder="Size name"
@@ -1044,7 +1044,7 @@ export default function CostSheetEditorPage() {
                       />
                       <Button
                         variant="primary"
-                        className="px-2 py-1 text-[0.78rem]"
+                        className="min-h-[40px] px-2 py-1 text-[0.78rem] md:min-h-0"
                         disabled={savingSize || !newSizeName.trim()}
                         onClick={addSizeInline}
                       >
@@ -1052,7 +1052,7 @@ export default function CostSheetEditorPage() {
                       </Button>
                       <Button
                         variant="ghost"
-                        className="px-2 py-1 text-[0.78rem]"
+                        className="min-h-[40px] min-w-[40px] px-2 py-1 text-[0.78rem] md:min-h-0 md:min-w-0"
                         onClick={() => {
                           setAddingSize(false);
                           setNewSizeName("");
@@ -1064,7 +1064,7 @@ export default function CostSheetEditorPage() {
                   ) : (
                     <button
                       onClick={() => setAddingSize(true)}
-                      className="rounded-lg border border-hairline px-2.5 py-1 text-[0.8rem] font-medium text-ink-soft hover:bg-surface"
+                      className="min-h-[40px] rounded-lg border border-hairline px-2.5 py-1 text-[0.8rem] font-medium text-ink-soft hover:bg-surface md:min-h-0"
                     >
                       + Add size
                     </button>
@@ -1138,24 +1138,24 @@ export default function CostSheetEditorPage() {
           <p className="mb-2 text-[0.82rem] font-medium text-ink">
             Fetch from product
           </p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="block w-full sm:w-auto">
               <span className="mb-1.5 block text-[0.78rem] text-ink-soft">
                 Search
               </span>
               <input
-                className="field w-48"
+                className="field w-full sm:w-48"
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
                 placeholder="Filter by name"
               />
             </label>
-            <label className="block">
+            <label className="block w-full sm:w-auto">
               <span className="mb-1.5 block text-[0.78rem] text-ink-soft">
                 Product
               </span>
               <select
-                className="field w-56"
+                className="field w-full sm:w-56"
                 value={selectedProductId}
                 onChange={(e) => setSelectedProductId(e.target.value)}
               >
@@ -1173,7 +1173,7 @@ export default function CostSheetEditorPage() {
             </label>
             <Button
               onClick={fetchFromProduct}
-              className="px-3 py-2 text-[0.85rem]"
+              className="min-h-[44px] w-full px-3 py-2 text-[0.85rem] sm:w-auto md:min-h-0"
               disabled={!selectedProductId}
             >
               Fetch Cutting / Stitching / Threading / Packing
@@ -1186,24 +1186,24 @@ export default function CostSheetEditorPage() {
           <p className="mb-2 text-[0.82rem] font-medium text-ink">
             Load from another sheet
           </p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <label className="block w-full sm:w-auto">
               <span className="mb-1.5 block text-[0.78rem] text-ink-soft">
                 Search
               </span>
               <input
-                className="field w-48"
+                className="field w-full sm:w-48"
                 value={sheetSearch}
                 onChange={(e) => setSheetSearch(e.target.value)}
                 placeholder="Serial or title"
               />
             </label>
-            <label className="block">
+            <label className="block w-full sm:w-auto">
               <span className="mb-1.5 block text-[0.78rem] text-ink-soft">
                 Cost sheet
               </span>
               <select
-                className="field w-64"
+                className="field w-full sm:w-64"
                 value={loadFromSheetId}
                 onChange={(e) => setLoadFromSheetId(e.target.value)}
               >
@@ -1221,7 +1221,7 @@ export default function CostSheetEditorPage() {
             </label>
             <Button
               onClick={loadItemsFromSheet}
-              className="px-3 py-2 text-[0.85rem]"
+              className="min-h-[44px] w-full px-3 py-2 text-[0.85rem] sm:w-auto md:min-h-0"
               disabled={!loadFromSheetId || loadingItems}
             >
               {loadingItems ? "Loading…" : "Load its value added items"}
@@ -1233,7 +1233,7 @@ export default function CostSheetEditorPage() {
           <h3 className="text-[0.95rem] font-semibold text-ink">Items</h3>
           <Button
             onClick={addItemRow}
-            className="px-3 py-1.5 text-[0.85rem] print:hidden"
+            className="min-h-[40px] px-3 py-1.5 text-[0.85rem] print:hidden md:min-h-0"
           >
             Add row
           </Button>
@@ -1268,7 +1268,7 @@ export default function CostSheetEditorPage() {
                         <button
                           onClick={() => moveItem(index, -1)}
                           disabled={index === 0}
-                          className="rounded border border-hairline px-1.5 text-ink-soft hover:bg-canvas disabled:opacity-30"
+                          className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-hairline text-ink-soft hover:bg-canvas disabled:opacity-30 md:min-h-0 md:min-w-0 md:px-1.5"
                           aria-label="Move up"
                         >
                           ↑
@@ -1276,7 +1276,7 @@ export default function CostSheetEditorPage() {
                         <button
                           onClick={() => moveItem(index, 1)}
                           disabled={index === items.length - 1}
-                          className="rounded border border-hairline px-1.5 text-ink-soft hover:bg-canvas disabled:opacity-30"
+                          className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-hairline text-ink-soft hover:bg-canvas disabled:opacity-30 md:min-h-0 md:min-w-0 md:px-1.5"
                           aria-label="Move down"
                         >
                           ↓
@@ -1331,7 +1331,7 @@ export default function CostSheetEditorPage() {
                     <td className="py-2 text-right print:hidden">
                       <button
                         onClick={() => removeItem(it.id)}
-                        className="rounded-lg border border-hairline px-2.5 py-1.5 text-[0.82rem] text-ink-soft hover:bg-canvas"
+                        className="min-h-[40px] rounded-lg border border-hairline px-2.5 py-1.5 text-[0.82rem] text-ink-soft hover:bg-canvas md:min-h-0"
                       >
                         Remove
                       </button>
@@ -1487,7 +1487,7 @@ export default function CostSheetEditorPage() {
       </Card>
 
       {/* Actions */}
-      <div className="sticky bottom-0 -mx-8 border-t border-hairline bg-canvas/95 px-8 py-4 backdrop-blur print:hidden">
+      <div className="sticky bottom-20 -mx-4 border-t border-hairline bg-canvas/95 px-4 py-4 backdrop-blur print:hidden sm:-mx-6 sm:px-6 md:bottom-0 md:-mx-8 md:px-8">
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="primary"

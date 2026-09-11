@@ -2,54 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  FileSpreadsheet,
-  Package,
-  ArrowLeftRight,
-  type LucideIcon,
-} from "lucide-react";
+import { NAV } from "./nav";
 import { cn } from "./ui";
-
-interface NavItem {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  match: (p: string) => boolean;
-}
-
-const NAV: NavItem[] = [
-  {
-    href: "/",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    match: (p) => p === "/",
-  },
-  {
-    href: "/sheets",
-    label: "Cost sheets",
-    icon: FileSpreadsheet,
-    match: (p) => p === "/sheets" || p.startsWith("/sheets/"),
-  },
-  {
-    href: "/products",
-    label: "Products",
-    icon: Package,
-    match: (p) => p.startsWith("/products"),
-  },
-  {
-    href: "/rates",
-    label: "Exchange rates",
-    icon: ArrowLeftRight,
-    match: (p) => p.startsWith("/rates"),
-  },
-];
 
 export function Sidebar() {
   const pathname = usePathname() || "/";
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-hairline bg-surface p-6 print:hidden">
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-hairline bg-surface p-6 print:hidden md:flex">
       <Link href="/" className="mb-8 flex items-center gap-2.5">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-ink text-[0.95rem] font-bold text-white">
           M

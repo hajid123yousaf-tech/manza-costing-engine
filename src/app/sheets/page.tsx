@@ -192,7 +192,7 @@ export default function SheetsListPage() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         <Button
-                          className="px-3 py-1.5 text-[0.82rem]"
+                          className="min-h-[40px] px-3 py-1.5 text-[0.82rem] md:min-h-0"
                           disabled={dupId === s.id}
                           onClick={(e) => {
                             e.stopPropagation();

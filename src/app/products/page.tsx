@@ -193,7 +193,7 @@ export default function ProductsPage() {
                           <button
                             onClick={() => move(realIndex, -1)}
                             disabled={realIndex === 0 || savingId === p.id}
-                            className="rounded border border-hairline px-1.5 text-ink-soft hover:bg-canvas disabled:opacity-30"
+                            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-hairline text-ink-soft hover:bg-canvas disabled:opacity-30 md:min-h-0 md:min-w-0 md:px-1.5"
                             aria-label="Move up"
                           >
                             ↑
@@ -204,7 +204,7 @@ export default function ProductsPage() {
                               realIndex === products.length - 1 ||
                               savingId === p.id
                             }
-                            className="rounded border border-hairline px-1.5 text-ink-soft hover:bg-canvas disabled:opacity-30"
+                            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded border border-hairline text-ink-soft hover:bg-canvas disabled:opacity-30 md:min-h-0 md:min-w-0 md:px-1.5"
                             aria-label="Move down"
                           >
                             ↓
@@ -244,7 +244,7 @@ export default function ProductsPage() {
                           {isDirty(p.id) ? (
                             <Button
                               variant="primary"
-                              className="px-3 py-1.5 text-[0.85rem]"
+                              className="min-h-[40px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
                               disabled={savingId === p.id}
                               onClick={() => saveRow(p)}
                             >
@@ -252,7 +252,7 @@ export default function ProductsPage() {
                             </Button>
                           ) : null}
                           <Button
-                            className="px-3 py-1.5 text-[0.85rem]"
+                            className="min-h-[40px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
                             disabled={savingId === p.id}
                             onClick={() => toggleActive(p)}
                           >
@@ -308,7 +308,7 @@ export default function ProductsPage() {
                   <td className="px-4 py-3 text-right">
                     <Button
                       variant="primary"
-                      className="px-3 py-1.5 text-[0.85rem]"
+                      className="min-h-[40px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
                       disabled={adding}
                       onClick={addProduct}
                     >

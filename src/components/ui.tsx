@@ -90,8 +90,8 @@ export function SectionHeading({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-4">
-      <div>
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
         <h2 className="text-[1.125rem] font-semibold tracking-tight text-ink">
           {title}
         </h2>

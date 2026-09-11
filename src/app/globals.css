@@ -86,6 +86,16 @@ table.grid-input input {
   border-radius: 0;
 }
 
+/* Mobile: comfortable tap targets, additive only below the sidebar breakpoint */
+@media (max-width: 767px) {
+  .field {
+    min-height: 44px;
+  }
+  table.grid-input input {
+    min-height: 44px;
+  }
+}
+
 @media print {
   html,
   body {
