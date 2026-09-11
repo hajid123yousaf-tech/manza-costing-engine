@@ -7,11 +7,6 @@ import {
 } from "@/lib/ledger";
 
 const num = (n: number, decimals = 2) => formatNumber(n, decimals);
-const money2 = (n: number) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 
 function CategoryTable({ cat }: { cat: LedgerData["categories"][number] }) {
   return (
@@ -173,21 +168,23 @@ export function PrintLedger({
                   ))}
 
                   <tr>
-                    <th className="b">TOTAL ({first.displayCurrency})</th>
+                    <th className="b">TOTAL (PKR)</th>
                     {group.blocks.map((b, bi) => (
                       <td className="v b" key={bi}>
-                        {num(b.totalDisplay)}
+                        {num(b.totalPkr)}
                       </td>
                     ))}
                   </tr>
-                  <tr>
-                    <th>EURO. {num(first.eurRate)}</th>
-                    {group.blocks.map((b, bi) => (
-                      <td className="v" key={bi}>
-                        € {money2(b.totalEur)}
-                      </td>
-                    ))}
-                  </tr>
+                  {first.displayCurrency !== "PKR" ? (
+                    <tr>
+                      <th className="b">TOTAL ({first.displayCurrency})</th>
+                      {group.blocks.map((b, bi) => (
+                        <td className="v b" key={bi}>
+                          {num(b.totalDisplay)}
+                        </td>
+                      ))}
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
@@ -246,13 +243,15 @@ export function PrintLedger({
                 ))}
 
                 <tr>
-                  <th className="b">TOTAL ({block.displayCurrency})</th>
-                  <td className="v b">{num(block.totalDisplay)}</td>
+                  <th className="b">TOTAL (PKR)</th>
+                  <td className="v b">{num(block.totalPkr)}</td>
                 </tr>
-                <tr>
-                  <th>EURO. {num(block.eurRate)}</th>
-                  <td className="v">€ {money2(block.totalEur)}</td>
-                </tr>
+                {block.displayCurrency !== "PKR" ? (
+                  <tr>
+                    <th className="b">TOTAL ({block.displayCurrency})</th>
+                    <td className="v b">{num(block.totalDisplay)}</td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
 

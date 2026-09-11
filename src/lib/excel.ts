@@ -11,12 +11,6 @@ import {
 const round = (n: number) =>
   Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 
-const eur = (n: number) =>
-  round(n).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
 /* ---------- cell styles ---------- */
 
 const THIN = { style: "thin", color: { rgb: "000000" } };
@@ -124,13 +118,15 @@ function buildSizeSheet(
     r += 1;
   }
 
-  put(r, 0, `TOTAL (${block.displayCurrency})`, ST.label, "s");
-  put(r, 1, round(block.totalDisplay), ST.valueBold, "n");
+  put(r, 0, "TOTAL (PKR)", ST.label, "s");
+  put(r, 1, round(block.totalPkr), ST.valueBold, "n");
   r += 1;
 
-  put(r, 0, `EURO. ${round(block.eurRate)}`, ST.label, "s");
-  put(r, 1, `€ ${eur(block.totalEur)}`, ST.value, "s");
-  r += 1;
+  if (block.displayCurrency !== "PKR") {
+    put(r, 0, `TOTAL (${block.displayCurrency})`, ST.label, "s");
+    put(r, 1, round(block.totalDisplay), ST.valueBold, "n");
+    r += 1;
+  }
 
   /* RIGHT tables — one per used category, columns D/E then G/H */
   categories.forEach((cat, idx) => {
@@ -274,17 +270,19 @@ function buildUnifiedSheet(
     r += 1;
   }
 
-  put(r, 0, `TOTAL (${first.displayCurrency})`, ST.label, "s");
+  put(r, 0, "TOTAL (PKR)", ST.label, "s");
   group.blocks.forEach((b, i) =>
-    put(r, i + 1, round(b.totalDisplay), ST.valueBold, "n"),
+    put(r, i + 1, round(b.totalPkr), ST.valueBold, "n"),
   );
   r += 1;
 
-  put(r, 0, `EURO. ${round(first.eurRate)}`, ST.label, "s");
-  group.blocks.forEach((b, i) =>
-    put(r, i + 1, `€ ${eur(b.totalEur)}`, ST.value, "s"),
-  );
-  r += 1;
+  if (first.displayCurrency !== "PKR") {
+    put(r, 0, `TOTAL (${first.displayCurrency})`, ST.label, "s");
+    group.blocks.forEach((b, i) =>
+      put(r, i + 1, round(b.totalDisplay), ST.valueBold, "n"),
+    );
+    r += 1;
+  }
 
   ws["!ref"] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
