@@ -15,6 +15,7 @@ import { buildLedger, type LedgerLayout } from "@/lib/ledger";
 import { duplicateSheet } from "@/lib/duplicateSheet";
 import { formatMoney, formatNumber, serial } from "@/lib/format";
 import { PrintLedger } from "@/components/PrintLedger";
+import { ExchangeRatesPanel } from "@/components/ExchangeRatesPanel";
 import {
   FABRIC_CATEGORIES,
   FABRIC_UNITS,
@@ -283,6 +284,18 @@ export default function CostSheetEditorPage() {
       await load();
     })();
   }, [load]);
+
+  /**
+   * Re-fetches just the exchange rates used for currency conversion, without
+   * resetting any other in-progress edit on the page. Passed to the
+   * Exchange rates panel so a rate change there is reflected immediately.
+   */
+  const refetchRates = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("exchange_rates")
+      .select("currency_code, rate_to_pkr");
+    if (!error) setRates(data ?? []);
+  }, []);
 
   /* ---------- derived ---------- */
 
@@ -659,7 +672,7 @@ export default function CostSheetEditorPage() {
           .single();
         if (error || !data) throw error ?? new Error("Insert failed.");
         await persistChildren(data.id);
-        router.replace(`/sheets/${data.id}`);
+        router.replace(`/costing-hub/sheets/${data.id}`);
         return;
       }
 
@@ -702,7 +715,7 @@ export default function CostSheetEditorPage() {
         .delete()
         .eq("id", routeId);
       if (error) throw error;
-      router.push("/sheets");
+      router.push("/costing-hub/sheets");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed.");
       setSaving(false);
@@ -714,7 +727,7 @@ export default function CostSheetEditorPage() {
     setError(null);
     try {
       const newId = await duplicateSheet(routeId);
-      router.push(`/sheets/${newId}`);
+      router.push(`/costing-hub/sheets/${newId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not duplicate the sheet.");
       setDuplicating(false);
@@ -745,7 +758,7 @@ export default function CostSheetEditorPage() {
         <PageHeader title="Cost sheet" />
         <ErrorNote message={error} />
         <div className="mt-4">
-          <ButtonLink href="/sheets">Back to cost sheets</ButtonLink>
+          <ButtonLink href="/costing-hub/sheets">Back to cost sheets</ButtonLink>
         </div>
       </div>
     );
@@ -834,7 +847,7 @@ export default function CostSheetEditorPage() {
             </>
           ) : null}
           <Link
-            href="/sheets"
+            href="/costing-hub/sheets"
             className="flex min-h-[44px] items-center text-[0.9rem] font-medium text-ink-soft hover:text-ink md:min-h-0"
           >
             Back to list
@@ -900,6 +913,9 @@ export default function CostSheetEditorPage() {
               ))}
             </select>
           </label>
+
+          <ExchangeRatesPanel onChanged={refetchRates} />
+
           <label className="block md:col-span-2">
             <span className="mb-1.5 block text-[0.85rem] font-medium text-ink">
               Notes

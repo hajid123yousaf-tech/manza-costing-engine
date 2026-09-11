@@ -10,12 +10,12 @@ export function Sidebar() {
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-hairline bg-surface p-6 print:hidden md:flex">
-      <Link href="/" className="mb-8 flex items-center gap-2.5">
+      <Link href="/costing-hub" className="mb-8 flex items-center gap-2.5">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-ink text-[0.95rem] font-bold text-white">
-          M
+          C
         </span>
         <span className="text-[1.1rem] font-semibold tracking-tight text-ink">
-          Manza
+          Costing Hub
         </span>
       </Link>
 

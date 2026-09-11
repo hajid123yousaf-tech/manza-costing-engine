@@ -6,6 +6,8 @@ import {
   FileSpreadsheet,
   FilePen,
   Archive,
+  Package,
+  ChevronRight,
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -91,7 +93,7 @@ export default function DashboardPage() {
         title="Welcome back"
         description="A quick read on every costing you are keeping track of."
       >
-        <ButtonLink href="/sheets/new" variant="primary">
+        <ButtonLink href="/costing-hub/sheets/new" variant="primary">
           New cost sheet
         </ButtonLink>
       </PageHeader>
@@ -123,6 +125,21 @@ export default function DashboardPage() {
             />
           </div>
 
+          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <EntryCard
+              href="/costing-hub/sheets"
+              icon={FileSpreadsheet}
+              title="Cost Sheets"
+              description="Browse, create, duplicate and print every costing."
+            />
+            <EntryCard
+              href="/costing-hub/products"
+              icon={Package}
+              title="Products"
+              description="Manage the cutting, stitching, threading and packing rates each product carries."
+            />
+          </div>
+
           <div className="mt-8">
             <Card className="p-6">
               <div className="mb-2 flex items-center justify-between">
@@ -130,7 +147,7 @@ export default function DashboardPage() {
                   Recent cost sheets
                 </h2>
                 <Link
-                  href="/sheets"
+                  href="/costing-hub/sheets"
                   className="text-[0.9rem] font-medium text-ink-soft hover:text-ink"
                 >
                   View all
@@ -142,7 +159,7 @@ export default function DashboardPage() {
                   title="No cost sheets yet"
                   description="Create your first cost sheet to start pricing an order."
                   action={
-                    <ButtonLink href="/sheets/new" variant="primary">
+                    <ButtonLink href="/costing-hub/sheets/new" variant="primary">
                       New cost sheet
                     </ButtonLink>
                   }
@@ -157,7 +174,7 @@ export default function DashboardPage() {
                         className="border-b border-hairline last:border-0"
                       >
                         <Link
-                          href={`/sheets/${sheet.id}`}
+                          href={`/costing-hub/sheets/${sheet.id}`}
                           className="flex items-center gap-4 rounded-xl px-2 py-3 transition-colors hover:bg-canvas"
                         >
                           <SerialBadge>{serial(sheet.serial_number)}</SerialBadge>
@@ -221,5 +238,37 @@ function KpiCard({
       </p>
       <p className="mt-1.5 text-[0.9rem] font-medium text-ink-soft">{label}</p>
     </div>
+  );
+}
+
+/** Large entry-point card — the module's two main sections. */
+function EntryCard({
+  href,
+  icon: Icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-4 rounded-2xl border border-hairline bg-surface p-6 transition-shadow hover:shadow-[0_10px_30px_-14px_rgba(28,30,33,0.22)]"
+    >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-canvas text-ink">
+        <Icon size={22} strokeWidth={2} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[1.05rem] font-semibold text-ink">{title}</p>
+        <p className="mt-0.5 text-[0.85rem] text-ink-soft">{description}</p>
+      </div>
+      <ChevronRight
+        size={18}
+        className="shrink-0 text-ink-soft transition-transform group-hover:translate-x-0.5"
+      />
+    </Link>
   );
 }

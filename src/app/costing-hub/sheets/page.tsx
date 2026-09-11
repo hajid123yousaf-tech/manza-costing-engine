@@ -43,7 +43,7 @@ export default function SheetsListPage() {
     setError(null);
     try {
       const newId = await duplicateSheet(id);
-      router.push(`/sheets/${newId}`);
+      router.push(`/costing-hub/sheets/${newId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not duplicate the sheet.");
       setDupId(null);
@@ -92,7 +92,7 @@ export default function SheetsListPage() {
         title="Cost sheets"
         description="Every costing, newest first. Search by title or customer, or filter by status."
       >
-        <ButtonLink href="/sheets/new" variant="primary">
+        <ButtonLink href="/costing-hub/sheets/new" variant="primary">
           New cost sheet
         </ButtonLink>
       </PageHeader>
@@ -136,7 +136,7 @@ export default function SheetsListPage() {
           }
           action={
             sheets.length === 0 ? (
-              <ButtonLink href="/sheets/new" variant="primary">
+              <ButtonLink href="/costing-hub/sheets/new" variant="primary">
                 New cost sheet
               </ButtonLink>
             ) : undefined
@@ -164,7 +164,7 @@ export default function SheetsListPage() {
                   return (
                     <tr
                       key={s.id}
-                      onClick={() => router.push(`/sheets/${s.id}`)}
+                      onClick={() => router.push(`/costing-hub/sheets/${s.id}`)}
                       className="cursor-pointer border-b border-hairline transition-colors last:border-0 hover:bg-canvas"
                     >
                       <td className="px-5 py-3">

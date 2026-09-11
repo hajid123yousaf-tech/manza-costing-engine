@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   FileSpreadsheet,
   Package,
-  ArrowLeftRight,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,31 +15,25 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   {
-    href: "/",
+    href: "/costing-hub",
     label: "Dashboard",
     shortLabel: "Dashboard",
     icon: LayoutDashboard,
-    match: (p) => p === "/",
+    match: (p) => p === "/costing-hub",
   },
   {
-    href: "/sheets",
-    label: "Cost sheets",
+    href: "/costing-hub/sheets",
+    label: "Cost Sheets",
     shortLabel: "Sheets",
     icon: FileSpreadsheet,
-    match: (p) => p === "/sheets" || p.startsWith("/sheets/"),
+    match: (p) =>
+      p === "/costing-hub/sheets" || p.startsWith("/costing-hub/sheets/"),
   },
   {
-    href: "/products",
+    href: "/costing-hub/products",
     label: "Products",
     shortLabel: "Products",
     icon: Package,
-    match: (p) => p.startsWith("/products"),
-  },
-  {
-    href: "/rates",
-    label: "Exchange rates",
-    shortLabel: "Rates",
-    icon: ArrowLeftRight,
-    match: (p) => p.startsWith("/rates"),
+    match: (p) => p.startsWith("/costing-hub/products"),
   },
 ];
