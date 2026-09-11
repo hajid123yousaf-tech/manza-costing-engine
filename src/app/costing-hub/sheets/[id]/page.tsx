@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -62,14 +62,55 @@ interface SheetRef {
 
 type FabricConsumption = Record<FabricType, Record<string, number>>;
 
-const uid = () =>
-  typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `id-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+/**
+ * Client-generated id for value-add item rows (inserted as the real primary
+ * key of a `uuid` column, see persistChildren). `crypto.randomUUID()` only
+ * works in secure contexts (HTTPS, or localhost) — on a plain-HTTP origin
+ * it's `undefined`, so the fallback below must still produce a spec-shaped
+ * v4 UUID (not an arbitrary tagged string), or Postgres rejects the insert
+ * with "invalid input syntax for type uuid". `crypto.getRandomValues`,
+ * unlike `randomUUID`, has no secure-context requirement.
+ */
+const uid = (): string => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 const numOrZero = (v: string) => (v === "" ? 0 : Number(v));
 const editValue = (n: number) => (n === 0 ? "" : n);
 const emptyConsumption = (): FabricConsumption => ({ imported: {}, local: {} });
+
+/**
+ * Logs the full Postgrest error (code/message/details/hint — not just
+ * `.message`) so a failure like a constraint violation is diagnosable from
+ * the console, and returns a message that includes the code for the user.
+ */
+function describeSaveError(e: unknown, context: string): string {
+  const err = e as
+    | { message?: string; details?: string | null; hint?: string | null; code?: string }
+    | null
+    | undefined;
+  console.error(`[cost sheet] ${context} failed:`, err);
+  if (err && typeof err === "object" && typeof err.message === "string") {
+    const parts = [err.message];
+    if (err.code) parts.push(`(code ${err.code})`);
+    if (err.details) parts.push(`— ${err.details}`);
+    if (err.hint) parts.push(`Hint: ${err.hint}`);
+    return parts.join(" ");
+  }
+  return e instanceof Error ? e.message : "Save failed.";
+}
 
 /** Starter value-add rows dropped into every brand-new cost sheet. */
 const DEFAULT_ITEM_NAMES = [
@@ -108,6 +149,9 @@ export default function CostSheetEditorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Mirrors `saving` but updates synchronously, so a second click that lands
+  // before React re-renders the disabled button still can't slip through.
+  const savingRef = useRef(false);
   const [duplicating, setDuplicating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -645,10 +689,16 @@ export default function CostSheetEditorPage() {
   }
 
   async function handleSave(nextStatus?: "draft" | "archived") {
+    // Synchronous re-entrancy guard: a `ref` (unlike `saving` state) is
+    // visible to a second invocation immediately, even if two clicks land
+    // in the same tick before React re-renders the disabled button — so
+    // this can never fire the header insert twice for one click sequence.
+    if (savingRef.current) return;
     if (!title.trim()) {
       setError("Give the cost sheet a title before saving.");
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -673,7 +723,26 @@ export default function CostSheetEditorPage() {
           .select("id, serial_number, status")
           .single();
         if (error || !data) throw error ?? new Error("Insert failed.");
-        await persistChildren(data.id);
+
+        try {
+          await persistChildren(data.id);
+        } catch (childError) {
+          // Don't leave an orphaned, empty draft behind: if the fabric/item
+          // rows fail to save, undo the header we just created so a failed
+          // save never silently leaves a half-saved sheet in the list.
+          const { error: rollbackError } = await supabase
+            .from("cost_sheets")
+            .delete()
+            .eq("id", data.id);
+          if (rollbackError) {
+            console.error(
+              "[cost sheet] rollback of orphaned header failed:",
+              rollbackError,
+            );
+          }
+          throw childError;
+        }
+
         router.replace(`/costing-hub/sheets/${data.id}`);
         return;
       }
@@ -690,8 +759,11 @@ export default function CostSheetEditorPage() {
       );
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
+      setError(
+        describeSaveError(e, isNew ? "Creating cost sheet" : "Saving cost sheet"),
+      );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
