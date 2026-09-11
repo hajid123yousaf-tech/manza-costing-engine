@@ -1,7 +1,7 @@
 import { isPercentUnit, type SizeCost } from "./costing";
 import { FABRIC_CATEGORIES, type FabricType } from "./types";
 
-/** A fabric category's cost build-up, as shown in a right-hand ledger table. */
+/** A fabric category's cost build-up ("COSTING OF ... FABRIC PER ..."), shown once per sheet. */
 export interface LedgerCategory {
   type: FabricType;
   /** "IMPORTED" / "LOCAL" */
@@ -13,7 +13,7 @@ export interface LedgerCategory {
 }
 
 export interface LedgerFabricPair {
-  /** "" when only one category is used, otherwise "IMPORTED" / "LOCAL" */
+  /** "IMPORTED" / "LOCAL" — always shown, per category */
   label: string;
   /** consumption quantity for this size, in the category's unit */
   consumption: number;
@@ -35,11 +35,42 @@ export interface LedgerSizeBlock {
   totalEur: number;
 }
 
+/** "unified" = one table, sizes as columns. "per-size" = one block per size, the original format. */
+export type LedgerLayout = "unified" | "per-size";
+
 export interface LedgerData {
   /** only the fabric categories actually used on the sheet (for the right tables) */
   categories: LedgerCategory[];
   /** one block per active size */
   blocks: LedgerSizeBlock[];
+}
+
+/** Unified layout paginates/tabs past this many size columns — never shrinks to fit. */
+export const UNIFIED_GROUP_SIZE = 5;
+
+export interface LedgerSizeGroup {
+  blocks: LedgerSizeBlock[];
+  /** e.g. "Sizes 1-5" */
+  label: string;
+  /** true for the first group only — that's where the shared fabric tables render */
+  isFirst: boolean;
+}
+
+/** Split size blocks into fixed-size groups for the unified (sizes-as-columns) layout. */
+export function groupBlocksForUnified(
+  blocks: LedgerSizeBlock[],
+  groupSize: number = UNIFIED_GROUP_SIZE,
+): LedgerSizeGroup[] {
+  const groups: LedgerSizeGroup[] = [];
+  for (let i = 0; i < blocks.length; i += groupSize) {
+    const chunk = blocks.slice(i, i + groupSize);
+    groups.push({
+      blocks: chunk,
+      label: `Sizes ${i + 1}-${i + chunk.length}`,
+      isFirst: i === 0,
+    });
+  }
+  return groups;
 }
 
 export interface LedgerInput {
@@ -78,7 +109,6 @@ export function buildLedger(input: LedgerInput): LedgerData {
   const usedTypes = FABRIC_CATEGORIES.filter(
     (c) => input.categoryTotal[c.type] !== 0,
   ).map((c) => c.type);
-  const both = usedTypes.length === 2;
 
   const categories: LedgerCategory[] = usedTypes.map((type) => ({
     type,
@@ -98,7 +128,7 @@ export function buildLedger(input: LedgerInput): LedgerData {
   const blocks: LedgerSizeBlock[] = input.sizes.map((s, i) => {
     const sc = input.sizeCosts[i];
     const fabricPairs: LedgerFabricPair[] = usedTypes.map((type) => ({
-      label: both ? type.toUpperCase() : "",
+      label: type.toUpperCase(),
       consumption: input.fabricConsumption[type][s.id] ?? 0,
       fabricRate: type === "imported" ? sc.importedCost : sc.localCost,
     }));

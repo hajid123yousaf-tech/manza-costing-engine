@@ -142,6 +142,40 @@ table.grid-input input {
     flex-direction: column;
     gap: 22px;
   }
+
+  /* Unified layout (sizes as columns) — landscape, paginated past 5 sizes */
+  @page manza-ledger-landscape {
+    size: landscape;
+    margin: 10mm;
+  }
+  .print-ledger.unified {
+    page: manza-ledger-landscape;
+  }
+  .print-ledger .ledger-page {
+    break-inside: avoid;
+    padding: 10px 0;
+  }
+  .print-ledger .ledger-page + .ledger-page {
+    break-before: page;
+  }
+  .print-ledger .hdr-block {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  .print-ledger .top-tables {
+    display: flex;
+    gap: 22px;
+    margin-bottom: 12px;
+  }
+  .print-ledger .unified-table {
+    width: 100%;
+  }
+  .print-ledger .unified-table th:first-child {
+    min-width: 190px;
+  }
+  .print-ledger .v.szhdr {
+    text-align: center;
+  }
   .print-ledger table {
     border-collapse: collapse;
   }

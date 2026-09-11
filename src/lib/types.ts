@@ -1,5 +1,22 @@
-export type CurrencyCode = "PKR" | "USD" | "EUR" | "GBP";
-export const CURRENCIES: CurrencyCode[] = ["PKR", "USD", "EUR", "GBP"];
+/** Any 3-letter code present in the exchange_rates table. PKR is always the fixed base. */
+export type CurrencyCode = string;
+
+/** The original four, kept only to fix their display order ahead of any newly added currencies. */
+const LEGACY_CURRENCY_ORDER = ["PKR", "USD", "EUR", "GBP"];
+
+/** Sorts currency codes: the original PKR/USD/EUR/GBP order first, then any others alphabetically. */
+export function sortCurrencyCodes(codes: CurrencyCode[]): CurrencyCode[] {
+  return Array.from(new Set(codes)).sort((a, b) => {
+    const ia = LEGACY_CURRENCY_ORDER.indexOf(a);
+    const ib = LEGACY_CURRENCY_ORDER.indexOf(b);
+    if (ia !== -1 || ib !== -1) {
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    }
+    return a.localeCompare(b);
+  });
+}
 
 export type SheetStatus = "draft" | "archived";
 

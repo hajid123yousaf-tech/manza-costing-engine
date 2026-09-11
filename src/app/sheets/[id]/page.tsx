@@ -11,15 +11,15 @@ import {
   sumRates,
 } from "@/lib/costing";
 import { downloadSheetExcel } from "@/lib/excel";
-import { buildLedger } from "@/lib/ledger";
+import { buildLedger, type LedgerLayout } from "@/lib/ledger";
 import { duplicateSheet } from "@/lib/duplicateSheet";
 import { formatMoney, formatNumber, serial } from "@/lib/format";
 import { PrintLedger } from "@/components/PrintLedger";
 import {
-  CURRENCIES,
   FABRIC_CATEGORIES,
   FABRIC_UNITS,
   PRODUCT_COST_FIELDS,
+  sortCurrencyCodes,
   type CurrencyCode,
   type FabricType,
   type Product,
@@ -29,6 +29,7 @@ import {
   Button,
   ButtonLink,
   Card,
+  cn,
   ErrorNote,
   PageHeader,
   SectionHeading,
@@ -69,6 +70,34 @@ const numOrZero = (v: string) => (v === "" ? 0 : Number(v));
 const editValue = (n: number) => (n === 0 ? "" : n);
 const emptyConsumption = (): FabricConsumption => ({ imported: {}, local: {} });
 
+/** Starter value-add rows dropped into every brand-new cost sheet. */
+const DEFAULT_ITEM_NAMES = [
+  "Thread",
+  "CTN Packing",
+  "Label",
+  "Poly Bag",
+  "Master Bag",
+  "Card/Parchi",
+  "Carton",
+  "Freight",
+  "Overhead",
+  "Pati",
+  "Bank",
+  "Zip",
+  "Kunda",
+  "Tape",
+  "Sales Tax",
+];
+
+const defaultNewSheetItems = (): ItemRow[] =>
+  DEFAULT_ITEM_NAMES.map((name) => ({
+    id: uid(),
+    source_item_id: null,
+    name,
+    unit: "per unit",
+    rate: 0,
+  }));
+
 export default function CostSheetEditorPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -81,6 +110,7 @@ export default function CostSheetEditorPage() {
   const [duplicating, setDuplicating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [printLayout, setPrintLayout] = useState<LedgerLayout>("unified");
 
   // Reference data
   const [sizes, setSizes] = useState<Size[]>([]);
@@ -174,7 +204,7 @@ export default function CostSheetEditorPage() {
       setFabricUnit({ imported: "meter", local: "meter" });
       setFabric([]);
       setFabricConsumption(emptyConsumption());
-      setItems([]);
+      setItems(defaultNewSheetItems());
       setLoading(false);
       return;
     }
@@ -692,7 +722,12 @@ export default function CostSheetEditorPage() {
   }
 
   function handleExcel() {
-    downloadSheetExcel({ serialNumber, title, ledger: ledgerData });
+    downloadSheetExcel({
+      serialNumber,
+      title,
+      ledger: ledgerData,
+      layout: printLayout,
+    });
   }
 
   if (loading) {
@@ -726,6 +761,14 @@ export default function CostSheetEditorPage() {
   const unitOptions = (current: string) =>
     FABRIC_UNITS.includes(current) ? FABRIC_UNITS : [...FABRIC_UNITS, current];
 
+  // Pull the currency list from exchange_rates, defensively including the
+  // sheet's current currency in case it was since removed from that table.
+  const currencyOptions = sortCurrencyCodes([
+    "PKR",
+    ...rates.map((r) => r.currency_code),
+    displayCurrency,
+  ]);
+
   return (
     <>
       <div className="print:hidden">
@@ -748,6 +791,34 @@ export default function CostSheetEditorPage() {
               >
                 {duplicating ? "Duplicating…" : "Duplicate"}
               </Button>
+              <div
+                className="inline-flex gap-1 rounded-full border border-hairline bg-surface p-1 print:hidden"
+                role="group"
+                aria-label="Print / export layout"
+              >
+                <button
+                  onClick={() => setPrintLayout("unified")}
+                  className={cn(
+                    "min-h-[40px] rounded-full px-3 py-1.5 text-[0.8rem] font-medium transition-colors md:min-h-0",
+                    printLayout === "unified"
+                      ? "bg-ink text-white"
+                      : "text-ink-soft hover:text-ink",
+                  )}
+                >
+                  Unified table
+                </button>
+                <button
+                  onClick={() => setPrintLayout("per-size")}
+                  className={cn(
+                    "min-h-[40px] rounded-full px-3 py-1.5 text-[0.8rem] font-medium transition-colors md:min-h-0",
+                    printLayout === "per-size"
+                      ? "bg-ink text-white"
+                      : "text-ink-soft hover:text-ink",
+                  )}
+                >
+                  One page per size
+                </button>
+              </div>
               <Button
                 onClick={() => window.print()}
                 className="min-h-[44px] px-3 py-1.5 text-[0.85rem] md:min-h-0"
@@ -822,7 +893,7 @@ export default function CostSheetEditorPage() {
                 setDisplayCurrency(e.target.value as CurrencyCode)
               }
             >
-              {CURRENCIES.map((c) => (
+              {currencyOptions.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -1548,7 +1619,7 @@ export default function CostSheetEditorPage() {
       </div>
       </div>
 
-      <PrintLedger data={ledgerData} />
+      {!isNew ? <PrintLedger data={ledgerData} layout={printLayout} /> : null}
     </>
   );
 }

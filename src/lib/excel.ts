@@ -1,5 +1,12 @@
 import * as XLSX from "xlsx-js-style";
-import type { LedgerCategory, LedgerData, LedgerSizeBlock } from "./ledger";
+import {
+  groupBlocksForUnified,
+  type LedgerCategory,
+  type LedgerData,
+  type LedgerLayout,
+  type LedgerSizeBlock,
+  type LedgerSizeGroup,
+} from "./ledger";
 
 const round = (n: number) =>
   Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
@@ -168,6 +175,136 @@ function buildSizeSheet(
   return ws as XLSX.WorkSheet;
 }
 
+/* ---------- unified worksheet — sizes as columns, one group per tab ---------- */
+
+function buildUnifiedSheet(
+  group: LedgerSizeGroup,
+  categories: LedgerCategory[],
+): XLSX.WorkSheet {
+  const ws: Record<string, unknown> = {};
+  const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] =
+    [];
+  let maxR = 0;
+  let maxC = 1;
+
+  const put = (
+    r: number,
+    c: number,
+    v: string | number,
+    s: Style,
+    t: "s" | "n" = typeof v === "number" ? "n" : "s",
+  ) => {
+    const cell: Cell = { v, t, s };
+    ws[XLSX.utils.encode_cell({ r, c })] = cell;
+    if (r > maxR) maxR = r;
+    if (c > maxC) maxC = c;
+  };
+
+  const lastCol = group.blocks.length; // col 0 = row label, 1..lastCol = sizes
+  let topRows = 0;
+
+  /* Shared fabric build-up tables — shown once, on the first group's tab only */
+  if (group.isFirst && categories.length > 0) {
+    categories.forEach((cat, idx) => {
+      const cl = idx * 3; // 0 -> A/B, 1 -> D/E
+      const cv = cl + 1;
+      let rr = 0;
+      put(
+        rr,
+        cl,
+        `COSTING OF ${cat.label} FABRIC PER ${cat.unit}`,
+        ST.header,
+        "s",
+      );
+      put(rr, cv, "", ST.header, "s");
+      merges.push({ s: { r: rr, c: cl }, e: { r: rr, c: cv } });
+      rr += 1;
+
+      for (const comp of cat.components) {
+        put(rr, cl, comp.name, ST.label, "s");
+        if (comp.isPercent) {
+          put(rr, cv, `${round(comp.rate)}%`, ST.value, "s");
+        } else {
+          put(rr, cv, round(comp.rate), ST.value, "n");
+        }
+        rr += 1;
+      }
+
+      put(rr, cl, `TOTAL COST PER ${cat.unit}`, ST.label, "s");
+      put(rr, cv, round(cat.totalPerUnit), ST.valueYellowBold, "n");
+      rr += 1;
+
+      topRows = Math.max(topRows, rr);
+    });
+  }
+
+  let r = topRows > 0 ? topRows + 1 : 0;
+  const first = group.blocks[0];
+
+  put(r, 0, "MANZA TEXTILE MILLS", ST.header, "s");
+  for (let c = 1; c <= lastCol; c++) put(r, c, "", ST.header, "s");
+  if (lastCol > 0) merges.push({ s: { r, c: 0 }, e: { r, c: lastCol } });
+  r += 1;
+
+  put(r, 0, first.dateStr || "—", ST.label, "s");
+  group.blocks.forEach((b, i) => put(r, i + 1, b.sizeName, ST.valueBold, "s"));
+  r += 1;
+
+  put(r, 0, "ITEMS", ST.label, "s");
+  put(r, 1, first.title, ST.title, "s");
+  for (let c = 2; c <= lastCol; c++) put(r, c, "", ST.title, "s");
+  if (lastCol > 1) merges.push({ s: { r, c: 1 }, e: { r, c: lastCol } });
+  r += 1;
+
+  const rowCount = Math.max(...group.blocks.map((b) => b.fabricPairs.length));
+  for (let pi = 0; pi < rowCount; pi++) {
+    const suffix = first.fabricPairs[pi]?.label
+      ? ` (${first.fabricPairs[pi].label})`
+      : "";
+    put(r, 0, `CONSUMPTION${suffix}`, ST.label, "s");
+    group.blocks.forEach((b, i) =>
+      put(r, i + 1, round(b.fabricPairs[pi]?.consumption ?? 0), ST.valueYellow, "n"),
+    );
+    r += 1;
+    put(r, 0, `FABRIC RATE${suffix}`, ST.label, "s");
+    group.blocks.forEach((b, i) =>
+      put(r, i + 1, round(b.fabricPairs[pi]?.fabricRate ?? 0), ST.value, "n"),
+    );
+    r += 1;
+  }
+
+  const itemCount = Math.max(...group.blocks.map((b) => b.items.length));
+  for (let ii = 0; ii < itemCount; ii++) {
+    put(r, 0, first.items[ii]?.name ?? "", ST.label, "s");
+    group.blocks.forEach((b, i) =>
+      put(r, i + 1, round(b.items[ii]?.value ?? 0), ST.value, "n"),
+    );
+    r += 1;
+  }
+
+  put(r, 0, "TOTAL", ST.label, "s");
+  group.blocks.forEach((b, i) =>
+    put(r, i + 1, round(b.totalPkr), ST.valueBold, "n"),
+  );
+  r += 1;
+
+  put(r, 0, `EURO. ${round(first.eurRate)}`, ST.label, "s");
+  group.blocks.forEach((b, i) =>
+    put(r, i + 1, `€ ${eur(b.totalEur)}`, ST.value, "s"),
+  );
+  r += 1;
+
+  ws["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: maxR, c: maxC },
+  });
+  ws["!merges"] = merges;
+  ws["!cols"] = Array.from({ length: maxC + 1 }, (_, i) =>
+    i === 0 ? { wch: 26 } : { wch: 16 },
+  );
+  return ws as XLSX.WorkSheet;
+}
+
 function safeSheetName(name: string, used: Set<string>): string {
   let base =
     (name || "Size").replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim() ||
@@ -187,6 +324,7 @@ export interface ExcelInput {
   serialNumber: number | null;
   title: string;
   ledger: LedgerData;
+  layout: LedgerLayout;
 }
 
 export function downloadSheetExcel(input: ExcelInput): void {
@@ -196,6 +334,13 @@ export function downloadSheetExcel(input: ExcelInput): void {
   if (input.ledger.blocks.length === 0) {
     const ws = XLSX.utils.aoa_to_sheet([["No active sizes on this cost sheet."]]);
     XLSX.utils.book_append_sheet(wb, ws, "Cost sheet");
+  } else if (input.layout === "unified") {
+    const groups = groupBlocksForUnified(input.ledger.blocks);
+    for (const group of groups) {
+      const ws = buildUnifiedSheet(group, input.ledger.categories);
+      const name = groups.length > 1 ? group.label : "Cost sheet";
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName(name, used));
+    }
   } else {
     for (const block of input.ledger.blocks) {
       const ws = buildSizeSheet(block, input.ledger.categories);
