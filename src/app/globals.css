@@ -189,7 +189,7 @@ table.grid-input input {
   .print-ledger th {
     border: 1px solid #000 !important;
     padding: 3px 10px;
-    font-size: 11px;
+    font-size: 13.2px;
     line-height: 1.35;
     vertical-align: top;
   }
@@ -210,7 +210,7 @@ table.grid-input input {
   .print-ledger .hdr {
     text-align: center;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 14.4px;
     letter-spacing: 0.02em;
   }
   .print-ledger .b {

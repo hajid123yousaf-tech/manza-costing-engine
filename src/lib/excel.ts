@@ -55,7 +55,7 @@ const ST = {
     alignment: { vertical: "top", wrapText: true },
   },
   header: {
-    font: { bold: true, sz: 12 },
+    font: { bold: true, sz: 14.4 },
     border: BORDER,
     alignment: { horizontal: "center", vertical: "center", wrapText: true },
   },
@@ -124,8 +124,8 @@ function buildSizeSheet(
     r += 1;
   }
 
-  put(r, 0, "TOTAL", ST.label, "s");
-  put(r, 1, round(block.totalPkr), ST.valueBold, "n");
+  put(r, 0, `TOTAL (${block.displayCurrency})`, ST.label, "s");
+  put(r, 1, round(block.totalDisplay), ST.valueBold, "n");
   r += 1;
 
   put(r, 0, `EURO. ${round(block.eurRate)}`, ST.label, "s");
@@ -144,11 +144,7 @@ function buildSizeSheet(
 
     for (const comp of cat.components) {
       put(rr, cl, comp.name, ST.label, "s");
-      if (comp.isPercent) {
-        put(rr, cv, `${round(comp.rate)}%`, ST.value, "s");
-      } else {
-        put(rr, cv, round(comp.rate), ST.value, "n");
-      }
+      put(rr, cv, round(comp.rate), ST.value, "n");
       rr += 1;
     }
 
@@ -222,11 +218,7 @@ function buildUnifiedSheet(
 
       for (const comp of cat.components) {
         put(rr, cl, comp.name, ST.label, "s");
-        if (comp.isPercent) {
-          put(rr, cv, `${round(comp.rate)}%`, ST.value, "s");
-        } else {
-          put(rr, cv, round(comp.rate), ST.value, "n");
-        }
+        put(rr, cv, round(comp.rate), ST.value, "n");
         rr += 1;
       }
 
@@ -282,9 +274,9 @@ function buildUnifiedSheet(
     r += 1;
   }
 
-  put(r, 0, "TOTAL", ST.label, "s");
+  put(r, 0, `TOTAL (${first.displayCurrency})`, ST.label, "s");
   group.blocks.forEach((b, i) =>
-    put(r, i + 1, round(b.totalPkr), ST.valueBold, "n"),
+    put(r, i + 1, round(b.totalDisplay), ST.valueBold, "n"),
   );
   r += 1;
 

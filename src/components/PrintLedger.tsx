@@ -25,9 +25,7 @@ function CategoryTable({ cat }: { cat: LedgerData["categories"][number] }) {
         {cat.components.map((comp, ci) => (
           <tr key={ci}>
             <th>{comp.name}</th>
-            <td className="v">
-              {comp.isPercent ? `${num(comp.rate)}%` : num(comp.rate)}
-            </td>
+            <td className="v">{num(comp.rate)}</td>
           </tr>
         ))}
         <tr>
@@ -175,10 +173,10 @@ export function PrintLedger({
                   ))}
 
                   <tr>
-                    <th className="b">TOTAL</th>
+                    <th className="b">TOTAL ({first.displayCurrency})</th>
                     {group.blocks.map((b, bi) => (
                       <td className="v b" key={bi}>
-                        {num(b.totalPkr)}
+                        {num(b.totalDisplay)}
                       </td>
                     ))}
                   </tr>
@@ -248,8 +246,8 @@ export function PrintLedger({
                 ))}
 
                 <tr>
-                  <th className="b">TOTAL</th>
-                  <td className="v b">{num(block.totalPkr)}</td>
+                  <th className="b">TOTAL ({block.displayCurrency})</th>
+                  <td className="v b">{num(block.totalDisplay)}</td>
                 </tr>
                 <tr>
                   <th>EURO. {num(block.eurRate)}</th>

@@ -8,7 +8,7 @@ export interface LedgerCategory {
   label: string;
   /** reference unit, upper-cased: "METER" */
   unit: string;
-  components: { name: string; rate: number; isPercent: boolean }[];
+  components: { name: string; rate: number }[];
   totalPerUnit: number;
 }
 
@@ -31,6 +31,11 @@ export interface LedgerSizeBlock {
   items: { name: string; value: number }[];
   /** material + all items, PKR */
   totalPkr: number;
+  /** the sheet's own display_currency code, e.g. "PKR" / "USD" / any custom currency */
+  displayCurrency: string;
+  /** totalPkr converted with the sheet's display_currency rate — what the "TOTAL" row shows */
+  totalDisplay: number;
+  /** always EUR, regardless of display_currency — what the "EURO." row shows */
   eurRate: number;
   totalEur: number;
 }
@@ -82,9 +87,11 @@ export interface LedgerInput {
   fabricConsumption: Record<FabricType, Record<string, number>>;
   categoryTotal: Record<FabricType, number>;
   items: { name: string; unit: string; rate: number }[];
-  /** aligned with `sizes` */
+  /** aligned with `sizes`; totalDisplay already reflects the sheet's display_currency rate */
   sizeCosts: SizeCost[];
   rates: { currency_code: string; rate_to_pkr: number }[];
+  /** the sheet's own display_currency, e.g. "PKR" / "USD" — drives the "TOTAL" row */
+  displayCurrency: string;
 }
 
 function pad(n: number): string {
@@ -96,10 +103,6 @@ export function formatDdMmYyyy(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
-}
-
-function isPercentComponent(name: string): boolean {
-  return /wastage/i.test(name) || name.includes("%");
 }
 
 export function buildLedger(input: LedgerInput): LedgerData {
@@ -116,10 +119,7 @@ export function buildLedger(input: LedgerInput): LedgerData {
     unit: (input.fabricUnit[type] || "unit").toUpperCase(),
     components: input.fabric
       .filter((f) => f.fabricType === type)
-      .map((f) => {
-        const name = f.name || "Untitled";
-        return { name, rate: f.rate, isPercent: isPercentComponent(name) };
-      }),
+      .map((f) => ({ name: f.name || "Untitled", rate: f.rate })),
     totalPerUnit: input.categoryTotal[type],
   }));
 
@@ -147,6 +147,8 @@ export function buildLedger(input: LedgerInput): LedgerData {
       fabricPairs,
       items,
       totalPkr: sc.totalPkr,
+      displayCurrency: input.displayCurrency,
+      totalDisplay: sc.totalDisplay,
       eurRate,
       totalEur: eurRate > 0 ? sc.totalPkr / eurRate : 0,
     };

@@ -351,6 +351,7 @@ export default function CostSheetEditorPage() {
         items: items.map((i) => ({ name: i.name, unit: i.unit, rate: i.rate })),
         sizeCosts,
         rates,
+        displayCurrency,
       }),
     [
       createdAt,
@@ -363,6 +364,7 @@ export default function CostSheetEditorPage() {
       items,
       sizeCosts,
       rates,
+      displayCurrency,
     ],
   );
 
