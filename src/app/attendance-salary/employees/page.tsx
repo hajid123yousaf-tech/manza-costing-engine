@@ -36,6 +36,7 @@ interface NewEmployee {
   shift_start: string;
   shift_end: string;
   time_tracking_enabled: boolean;
+  grace_minutes: number;
 }
 
 function blankNewEmployee(): NewEmployee {
@@ -49,6 +50,7 @@ function blankNewEmployee(): NewEmployee {
     shift_start: DEFAULT_SHIFT_TIMES.office.start,
     shift_end: DEFAULT_SHIFT_TIMES.office.end,
     time_tracking_enabled: true,
+    grace_minutes: 0,
   };
 }
 
@@ -127,6 +129,7 @@ export default function EmployeesPage() {
         shift_start: fromTimeInputValue(shiftStart),
         shift_end: fromTimeInputValue(shiftEnd),
         time_tracking_enabled: valueOf(e, "time_tracking_enabled"),
+        grace_minutes: Number(valueOf(e, "grace_minutes")) || 0,
       })
       .eq("id", e.id);
     setSavingId(null);
@@ -162,6 +165,7 @@ export default function EmployeesPage() {
       shift_start: fromTimeInputValue(newEmp.shift_start),
       shift_end: fromTimeInputValue(newEmp.shift_end),
       time_tracking_enabled: newEmp.time_tracking_enabled,
+      grace_minutes: newEmp.time_tracking_enabled ? Number(newEmp.grace_minutes) || 0 : 0,
       is_active: true,
     });
     setAdding(false);
@@ -323,6 +327,24 @@ export default function EmployeesPage() {
                 Track overtime &amp; short-time deduction
               </label>
             </div>
+            {newEmp.time_tracking_enabled ? (
+              <Field label="Grace period (minutes)" hint="Late arrivals within this many minutes aren't deducted.">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  className="field"
+                  placeholder="0"
+                  value={editValue(newEmp.grace_minutes)}
+                  onChange={(e) =>
+                    setNewEmp((r) => ({
+                      ...r,
+                      grace_minutes: numOrZero(e.target.value),
+                    }))
+                  }
+                />
+              </Field>
+            ) : null}
           </div>
           <div className="mt-5 flex justify-end">
             <Button variant="primary" disabled={adding} onClick={addEmployee}>
@@ -348,6 +370,7 @@ export default function EmployeesPage() {
                   <th className="px-4 py-3 text-right font-medium">Salary / Wage</th>
                   <th className="px-4 py-3 font-medium">Shift</th>
                   <th className="px-4 py-3 font-medium">Time tracking</th>
+                  <th className="px-4 py-3 text-right font-medium">Grace (min)</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
@@ -472,6 +495,23 @@ export default function EmployeesPage() {
                         />
                       </td>
                       <td className="px-4 py-2">
+                        {valueOf(e, "time_tracking_enabled") ? (
+                          <input
+                            type="number"
+                            step="1"
+                            min="0"
+                            className="field min-w-[4.5rem] text-right"
+                            placeholder="0"
+                            value={editValue(valueOf(e, "grace_minutes"))}
+                            onChange={(ev) =>
+                              patch(e.id, "grace_minutes", numOrZero(ev.target.value))
+                            }
+                          />
+                        ) : (
+                          <span className="block text-right text-ink-soft">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
                         {e.is_active ? (
                           <Pill tone="mint">Active</Pill>
                         ) : (
@@ -504,7 +544,7 @@ export default function EmployeesPage() {
                 })}
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-[0.9rem] text-ink-soft">
+                    <td colSpan={11} className="px-4 py-8 text-center text-[0.9rem] text-ink-soft">
                       No employees yet. Add one above.
                     </td>
                   </tr>

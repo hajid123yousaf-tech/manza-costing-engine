@@ -130,6 +130,8 @@ export interface Employee {
   /** "HH:MM:SS" */
   shift_end: string;
   time_tracking_enabled: boolean;
+  /** Daily grace period, in minutes, before a late check-in counts toward short-time deduction. */
+  grace_minutes: number;
   is_active: boolean;
   created_at: string;
 }

@@ -258,7 +258,7 @@ table.grid-input input {
   .print-plain th {
     border: 1px solid #000;
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: var(--pp-font-size, 11px);
     line-height: 1.35;
     vertical-align: top;
   }
@@ -274,5 +274,14 @@ table.grid-input input {
   }
   .print-plain .b {
     font-weight: 700;
+  }
+
+  /* Landscape variant — wide ledgers (Salary, Monthly Summary) that need more columns than portrait fits. */
+  @page manza-plain-landscape {
+    size: landscape;
+    margin: 10mm;
+  }
+  .print-plain.landscape {
+    page: manza-plain-landscape;
   }
 }

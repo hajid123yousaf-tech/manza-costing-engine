@@ -90,6 +90,29 @@ export function advanceBalance(transactions: AdvanceTransaction[]): number {
   );
 }
 
+/** Splits employees (or any per-employee row) into office/labour groups, office first. */
+export function splitByCategory<T extends { staff_category: Employee["staff_category"] }>(
+  rows: T[],
+): { office: T[]; labour: T[] } {
+  return {
+    office: rows.filter((r) => r.staff_category === "office"),
+    labour: rows.filter((r) => r.staff_category === "labour"),
+  };
+}
+
+/**
+ * Print font-size (px) for a compact ledger table: shrinks as row count
+ * grows so a report with many employees still targets ~1-2 printed pages
+ * instead of spilling onto a third. Thresholds are a tuned heuristic, not a
+ * guaranteed page-fit — CSS print pagination can't be measured in advance.
+ */
+export function compactPrintFontSize(rowCount: number): number {
+  if (rowCount <= 22) return 11;
+  if (rowCount <= 36) return 9.5;
+  if (rowCount <= 55) return 8;
+  return 6.5;
+}
+
 export interface EditableSalaryFields {
   base_pay: number;
   per_day_rate: number;
@@ -124,6 +147,73 @@ export function recalcSalaryLine(
   };
 }
 
+export interface MonthlyAttendanceStats {
+  present: number;
+  absent: number;
+  leave: number;
+  halfDay: number;
+  /** Summed per day as max(0, (check_in - shift_start) - grace_minutes) — grace applies daily, not once a month. */
+  lateMinutes: number;
+  overtimeMinutes: number;
+  shortTimeAmount: number;
+  overtimeAmount: number;
+}
+
+const blankStats = (): MonthlyAttendanceStats => ({
+  present: 0,
+  absent: 0,
+  leave: 0,
+  halfDay: 0,
+  lateMinutes: 0,
+  overtimeMinutes: 0,
+  shortTimeAmount: 0,
+  overtimeAmount: 0,
+});
+
+/**
+ * One employee's attendance-derived stats for a period month — the shared
+ * basis for both salary generation and the Monthly Summary report, so the
+ * two figures never drift apart. Late/overtime minutes and their amounts are
+ * only computed when the employee has time tracking enabled; otherwise those
+ * fields stay 0 (attendance counts themselves are unaffected by the flag).
+ */
+export function computeMonthlyAttendanceStats(
+  employee: Employee,
+  period: string,
+  records: AttendanceRecord[],
+): MonthlyAttendanceStats {
+  const stats = blankStats();
+  stats.present = records.filter((r) => r.status === "present").length;
+  stats.halfDay = records.filter((r) => r.status === "half_day").length;
+  stats.absent = records.filter((r) => r.status === "absent").length;
+  stats.leave = records.filter((r) => r.status === "leave").length;
+
+  if (!employee.time_tracking_enabled) return stats;
+
+  const hours = shiftHours(employee);
+  const shiftStartMin = timeToMinutes(employee.shift_start) ?? 0;
+  const shiftEndMin = timeToMinutes(employee.shift_end) ?? 0;
+  const grace = Number(employee.grace_minutes) || 0;
+
+  for (const r of records) {
+    const ci = timeToMinutes(r.check_in);
+    if (ci !== null) stats.lateMinutes += Math.max(0, ci - shiftStartMin - grace);
+    const co = timeToMinutes(r.check_out);
+    if (co !== null) stats.overtimeMinutes += Math.max(0, co - shiftEndMin);
+  }
+
+  const isMonthly = employee.pay_type === "monthly";
+  const monthlySalary = Number(employee.monthly_salary) || 0;
+  const dailyWage = Number(employee.daily_wage) || 0;
+  const dim = daysInMonth(period);
+  const basis = isMonthly ? monthlySalary : dailyWage * dim;
+  const perMinuteRate = hours > 0 ? basis / (30 * hours * 60) : 0;
+  stats.shortTimeAmount = round2(stats.lateMinutes * perMinuteRate);
+  stats.overtimeAmount = round2(stats.overtimeMinutes * perMinuteRate);
+
+  return stats;
+}
+
 export interface GeneratedSalaryLine extends EditableSalaryFields {
   employee_id: string;
   leave_days: number;
@@ -135,8 +225,9 @@ export interface GeneratedSalaryLine extends EditableSalaryFields {
 /**
  * Pre-fills one employee's salary line for a period from their attendance
  * that month, per the Salary page spec: base pay, per-day rate, leave days
- * (informational), and short-time deduction are computed; deduction days,
- * overtime, mess allowance and advance repayment start at 0 for manual entry.
+ * (informational — actually a count of 'absent' records, not 'leave'; kept
+ * as-is), short-time deduction and overtime are computed; deduction days,
+ * mess allowance and advance repayment start at 0 for manual entry.
  */
 export function generateSalaryLine(
   employee: Employee,
@@ -145,46 +236,154 @@ export function generateSalaryLine(
 ): GeneratedSalaryLine {
   const isMonthly = employee.pay_type === "monthly";
   const dim = daysInMonth(period);
-
-  const present = records.filter((r) => r.status === "present").length;
-  const halfDays = records.filter((r) => r.status === "half_day").length;
-  const absentDays = records.filter((r) => r.status === "absent").length;
+  const stats = computeMonthlyAttendanceStats(employee, period, records);
 
   const monthlySalary = Number(employee.monthly_salary) || 0;
   const dailyWage = Number(employee.daily_wage) || 0;
 
   const base_pay = isMonthly
     ? monthlySalary
-    : dailyWage * (present + 0.5 * halfDays);
+    : dailyWage * (stats.present + 0.5 * stats.halfDay);
   const per_day_rate = isMonthly && dim > 0 ? base_pay / dim : 0;
-
-  let short_time_deduction = 0;
-  if (employee.time_tracking_enabled) {
-    const hours = shiftHours(employee);
-    const shiftStartMin = timeToMinutes(employee.shift_start) ?? 0;
-    const lateMinutes = records.reduce((sum, r) => {
-      const ci = timeToMinutes(r.check_in);
-      return ci === null ? sum : sum + Math.max(0, ci - shiftStartMin);
-    }, 0);
-    const basis = isMonthly ? monthlySalary : dailyWage * dim;
-    const perMinuteRate = hours > 0 ? basis / (30 * hours * 60) : 0;
-    short_time_deduction = round2(lateMinutes * perMinuteRate);
-  }
 
   const editable: EditableSalaryFields = {
     base_pay: round2(base_pay),
     per_day_rate: round2(per_day_rate),
     deduction_days: 0,
-    overtime_amount: 0,
+    overtime_amount: stats.overtimeAmount,
     mess_allowance: 0,
     advance_repayment: 0,
-    short_time_deduction,
+    short_time_deduction: stats.shortTimeAmount,
   };
 
   return {
     employee_id: employee.id,
-    leave_days: absentDays,
+    leave_days: stats.absent,
     ...editable,
     ...recalcSalaryLine(editable, isMonthly),
   };
+}
+
+/* ---------- Salary ledger report (print + Excel share this shape) ---------- */
+
+/** One row of the "MANZA TEXTILE MILLS" salary ledger format — print and Excel both consume this. */
+export interface SalaryLedgerRow {
+  sNo: number;
+  employeeName: string;
+  designation: string;
+  payType: "monthly" | "daily";
+  perMonthSalary: number;
+  daysOfMonth: number;
+  leaveDays: number;
+  deductionDays: number;
+  perDayRate: number;
+  grossSalary: number;
+  overtimeAmount: number;
+  /** Cumulative 'given' advance_transactions up to and including this period. */
+  totalAdvance: number;
+  /** salary_lines.advance_repayment for this period. */
+  deductionThisMonth: number;
+  /** Cumulative given minus cumulative repaid, including this month's repayment. */
+  balAdvance: number;
+  messAllowance: number;
+  netSalary: number;
+  shortTimeDeduction: number;
+  finalSalary: number;
+}
+
+export interface SalaryLedgerTotals {
+  perMonthSalary: number;
+  leaveDays: number;
+  deductionDays: number;
+  grossSalary: number;
+  overtimeAmount: number;
+  totalAdvance: number;
+  deductionThisMonth: number;
+  balAdvance: number;
+  messAllowance: number;
+  netSalary: number;
+  shortTimeDeduction: number;
+  finalSalary: number;
+}
+
+export function sumSalaryLedgerRows(rows: SalaryLedgerRow[]): SalaryLedgerTotals {
+  const t: SalaryLedgerTotals = {
+    perMonthSalary: 0,
+    leaveDays: 0,
+    deductionDays: 0,
+    grossSalary: 0,
+    overtimeAmount: 0,
+    totalAdvance: 0,
+    deductionThisMonth: 0,
+    balAdvance: 0,
+    messAllowance: 0,
+    netSalary: 0,
+    shortTimeDeduction: 0,
+    finalSalary: 0,
+  };
+  for (const r of rows) {
+    t.perMonthSalary += r.perMonthSalary;
+    t.leaveDays += r.leaveDays;
+    t.deductionDays += r.deductionDays;
+    t.grossSalary += r.grossSalary;
+    t.overtimeAmount += r.overtimeAmount;
+    t.totalAdvance += r.totalAdvance;
+    t.deductionThisMonth += r.deductionThisMonth;
+    t.balAdvance += r.balAdvance;
+    t.messAllowance += r.messAllowance;
+    t.netSalary += r.netSalary;
+    t.shortTimeDeduction += r.shortTimeDeduction;
+    t.finalSalary += r.finalSalary;
+  }
+  return t;
+}
+
+/* ---------- Monthly attendance summary report ---------- */
+
+export interface MonthlySummaryRow {
+  employeeName: string;
+  designation: string;
+  present: number;
+  absent: number;
+  leave: number;
+  halfDay: number;
+  lateMinutes: number;
+  overtimeMinutes: number;
+  shortTimeAmount: number;
+  overtimeAmount: number;
+}
+
+export interface MonthlySummaryTotals {
+  present: number;
+  absent: number;
+  leave: number;
+  halfDay: number;
+  lateMinutes: number;
+  overtimeMinutes: number;
+  shortTimeAmount: number;
+  overtimeAmount: number;
+}
+
+export function sumMonthlySummaryRows(rows: MonthlySummaryRow[]): MonthlySummaryTotals {
+  const t: MonthlySummaryTotals = {
+    present: 0,
+    absent: 0,
+    leave: 0,
+    halfDay: 0,
+    lateMinutes: 0,
+    overtimeMinutes: 0,
+    shortTimeAmount: 0,
+    overtimeAmount: 0,
+  };
+  for (const r of rows) {
+    t.present += r.present;
+    t.absent += r.absent;
+    t.leave += r.leave;
+    t.halfDay += r.halfDay;
+    t.lateMinutes += r.lateMinutes;
+    t.overtimeMinutes += r.overtimeMinutes;
+    t.shortTimeAmount += r.shortTimeAmount;
+    t.overtimeAmount += r.overtimeAmount;
+  }
+  return t;
 }

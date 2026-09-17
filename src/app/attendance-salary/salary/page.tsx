@@ -3,18 +3,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
+  compactPrintFontSize,
   currentMonthInput,
+  daysInMonth,
   generateSalaryLine,
   monthInputToPeriod,
   monthLabel,
   monthRange,
   recalcSalaryLine,
+  round2,
+  sumSalaryLedgerRows,
   todayIso,
   type EditableSalaryFields,
+  type SalaryLedgerRow,
 } from "@/lib/attendanceSalary";
-import { downloadSalaryExcel } from "@/lib/attendanceSalaryExcel";
+import { downloadSalaryLedgerExcel } from "@/lib/attendanceSalaryExcel";
 import { formatMoney, formatNumber } from "@/lib/format";
-import type { AttendanceRecord, Employee, SalaryLine, SalaryPeriod } from "@/lib/types";
+import type {
+  AdvanceTransaction,
+  AttendanceRecord,
+  Employee,
+  SalaryLine,
+  SalaryPeriod,
+} from "@/lib/types";
 import {
   Button,
   Card,
@@ -66,6 +77,7 @@ export default function SalaryPage() {
   const [period, setPeriod] = useState<SalaryPeriod | null>(null);
   const [employees, setEmployees] = useState<Record<string, Employee>>({});
   const [lines, setLines] = useState<Record<string, LineDraft>>({});
+  const [transactions, setTransactions] = useState<AdvanceTransaction[]>([]);
   const [dirty, setDirty] = useState(false);
   const [confirmingFinalize, setConfirmingFinalize] = useState(false);
 
@@ -79,18 +91,23 @@ export default function SalaryPage() {
     setDirty(false);
     setConfirmingFinalize(false);
 
-    const [empRes, periodRes] = await Promise.all([
+    const { end: periodEnd } = monthRange(forPeriod);
+    const [empRes, periodRes, txnRes] = await Promise.all([
       supabase.from("employees").select("*"),
       supabase.from("salary_periods").select("*").eq("period_month", forPeriod).maybeSingle(),
+      supabase.from("advance_transactions").select("*").lte("date", periodEnd),
     ]);
-    if (empRes.error || periodRes.error) {
-      setError(empRes.error?.message || periodRes.error?.message || "Failed to load.");
+    if (empRes.error || periodRes.error || txnRes.error) {
+      setError(
+        empRes.error?.message || periodRes.error?.message || txnRes.error?.message || "Failed to load.",
+      );
       setLoading(false);
       return;
     }
     const empMap: Record<string, Employee> = {};
     for (const e of (empRes.data ?? []) as Employee[]) empMap[e.id] = e;
     setEmployees(empMap);
+    setTransactions((txnRes.data ?? []) as AdvanceTransaction[]);
 
     const periodRow = (periodRes.data ?? null) as SalaryPeriod | null;
     setPeriod(periodRow);
@@ -144,6 +161,69 @@ export default function SalaryPage() {
         .sort((a, b) => a.employee.employee_code - b.employee.employee_code),
     [lines, employees],
   );
+
+  /** Per employee, given/repaid summed from transactions dated on or before this period's last day. */
+  const advanceByEmployee = useMemo(() => {
+    const map = new Map<string, { given: number; repaid: number }>();
+    for (const t of transactions) {
+      const entry = map.get(t.employee_id) ?? { given: 0, repaid: 0 };
+      if (t.type === "given") entry.given += Number(t.amount);
+      else entry.repaid += Number(t.amount);
+      map.set(t.employee_id, entry);
+    }
+    return map;
+  }, [transactions]);
+
+  const periodDim = daysInMonth(periodDate);
+
+  /**
+   * The reference "MANZA TEXTILE MILLS" ledger's Office/Labour rows. Bal
+   * Advance = cumulative given - cumulative repaid (both already filtered to
+   * this period's month-end above) - this period's own repayment, which is
+   * only added separately while still a draft: once finalized, the finalize
+   * step has posted that exact amount as a 'repaid' transaction (usually
+   * dated within the period), so it's already inside advanceByEmployee's
+   * repaid total and must not be subtracted twice.
+   */
+  const ledger = useMemo(() => {
+    const withRow = rows.map(({ line, employee }) => {
+      const adv = advanceByEmployee.get(employee.id) ?? { given: 0, repaid: 0 };
+      const totalAdvance = adv.given;
+      const balAdvance = round2(adv.given - adv.repaid - (finalized ? 0 : line.advance_repayment));
+      const perMonthSalary =
+        employee.pay_type === "monthly"
+          ? Number(employee.monthly_salary) || 0
+          : Number(employee.daily_wage) || 0;
+      const row: SalaryLedgerRow = {
+        sNo: 0,
+        employeeName: employee.name,
+        designation: employee.designation ?? "",
+        payType: employee.pay_type,
+        perMonthSalary,
+        daysOfMonth: periodDim,
+        leaveDays: line.leave_days,
+        deductionDays: line.deduction_days,
+        perDayRate: line.per_day_rate,
+        grossSalary: line.gross_salary,
+        overtimeAmount: line.overtime_amount,
+        totalAdvance,
+        deductionThisMonth: line.advance_repayment,
+        balAdvance,
+        messAllowance: line.mess_allowance,
+        netSalary: line.net_salary,
+        shortTimeDeduction: line.short_time_deduction,
+        finalSalary: line.final_salary,
+      };
+      return { row, employee };
+    });
+    const office = withRow
+      .filter(({ employee }) => employee.staff_category === "office")
+      .map(({ row }, i) => ({ ...row, sNo: i + 1 }));
+    const labour = withRow
+      .filter(({ employee }) => employee.staff_category === "labour")
+      .map(({ row }, i) => ({ ...row, sNo: i + 1 }));
+    return { office, labour };
+  }, [rows, advanceByEmployee, finalized, periodDim]);
 
   const totals = useMemo(() => {
     const init = {
@@ -380,26 +460,7 @@ export default function SalaryPage() {
               <Button onClick={() => window.print()}>Print</Button>
               <Button
                 onClick={() =>
-                  downloadSalaryExcel(
-                    monthLabel(periodDate),
-                    rows.map(({ line, employee }) => ({
-                      employeeCode: employee.employee_code,
-                      employeeName: employee.name,
-                      payType: employee.pay_type,
-                      timeTrackingEnabled: employee.time_tracking_enabled,
-                      base_pay: line.base_pay,
-                      per_day_rate: line.per_day_rate,
-                      leave_days: line.leave_days,
-                      deduction_days: line.deduction_days,
-                      gross_salary: line.gross_salary,
-                      short_time_deduction: line.short_time_deduction,
-                      overtime_amount: line.overtime_amount,
-                      mess_allowance: line.mess_allowance,
-                      advance_repayment: line.advance_repayment,
-                      net_salary: line.net_salary,
-                      final_salary: line.final_salary,
-                    })),
-                  )
+                  downloadSalaryLedgerExcel(monthLabel(periodDate), ledger.office, ledger.labour)
                 }
               >
                 Download Excel
@@ -644,95 +705,134 @@ export default function SalaryPage() {
         </>
       )}
       </div>
-      <SalaryPrintView monthLabel={monthLabel(periodDate)} rows={rows} totals={totals} />
+      <SalaryLedgerPrintView
+        monthLabel={monthLabel(periodDate)}
+        office={ledger.office}
+        labour={ledger.labour}
+      />
     </>
   );
 }
 
-function SalaryPrintView({
-  monthLabel,
-  rows,
-  totals,
-}: {
-  monthLabel: string;
-  rows: { line: LineDraft; employee: Employee }[];
-  totals: {
-    base_pay: number;
-    gross_salary: number;
-    short_time_deduction: number;
-    overtime_amount: number;
-    mess_allowance: number;
-    advance_repayment: number;
-    net_salary: number;
-    final_salary: number;
-  };
-}) {
+function SalaryLedgerSection({ title, rows }: { title: string; rows: SalaryLedgerRow[] }) {
   if (rows.length === 0) return null;
   const num = (n: number) => formatNumber(n, 2);
+  const t = sumSalaryLedgerRows(rows);
   return (
-    <div className="print-plain hidden print:block">
-      <p className="pp-hdr">MANZA TEXTILE MILLS</p>
-      <p className="pp-sub">Salary — {monthLabel}</p>
+    <>
+      <p className="pp-section">{title}</p>
       <table>
         <thead>
           <tr>
-            <th>Employee</th>
-            <th className="v">Base pay</th>
-            <th className="v">Per day</th>
-            <th className="v">Leave days</th>
-            <th className="v">Deduct days</th>
-            <th className="v">Gross</th>
-            <th className="v">Short time</th>
-            <th className="v">Overtime</th>
-            <th className="v">Mess</th>
-            <th className="v">Advance</th>
-            <th className="v">Net</th>
-            <th className="v">Final</th>
+            <th>S#</th>
+            <th>Name</th>
+            <th>Designation</th>
+            <th className="v">Per Month Salary</th>
+            <th className="v">Days of Month</th>
+            <th className="v">Leave</th>
+            <th className="v">Deduction days</th>
+            <th className="v">Per Day Rate Base on 30</th>
+            <th className="v">Gross Salary</th>
+            <th className="v">Over time</th>
+            <th className="v">Total Advance</th>
+            <th className="v">Deduction in this Month</th>
+            <th className="v">Bal Advance</th>
+            <th className="v">Mess Allowance</th>
+            <th className="v">Net Salary</th>
+            <th className="v">Short Time Deduction</th>
+            <th className="v">Final Salary</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ line, employee }) => {
-            const isMonthly = employee.pay_type === "monthly";
-            return (
-              <tr key={line.employee_id}>
-                <td>
-                  #{employee.employee_code} {employee.name}
-                </td>
-                <td className="v">{num(line.base_pay)}</td>
-                <td className="v">{isMonthly ? num(line.per_day_rate) : "—"}</td>
-                <td className="v">{line.leave_days}</td>
-                <td className="v">{isMonthly ? num(line.deduction_days) : "—"}</td>
-                <td className="v">{num(line.gross_salary)}</td>
-                <td className="v">
-                  {employee.time_tracking_enabled ? num(line.short_time_deduction) : "—"}
-                </td>
-                <td className="v">
-                  {employee.time_tracking_enabled ? num(line.overtime_amount) : "—"}
-                </td>
-                <td className="v">{num(line.mess_allowance)}</td>
-                <td className="v">{num(line.advance_repayment)}</td>
-                <td className="v">{num(line.net_salary)}</td>
-                <td className="v b">{num(line.final_salary)}</td>
-              </tr>
-            );
-          })}
+          {rows.map((r) => (
+            <tr key={r.sNo + r.employeeName}>
+              <td>{r.sNo}</td>
+              <td>{r.employeeName}</td>
+              <td>{r.designation || "—"}</td>
+              <td className="v">{num(r.perMonthSalary)}</td>
+              <td className="v">{r.daysOfMonth}</td>
+              <td className="v">{r.leaveDays}</td>
+              <td className="v">{num(r.deductionDays)}</td>
+              <td className="v">{num(r.perDayRate)}</td>
+              <td className="v">{num(r.grossSalary)}</td>
+              <td className="v">{num(r.overtimeAmount)}</td>
+              <td className="v">{num(r.totalAdvance)}</td>
+              <td className="v">{num(r.deductionThisMonth)}</td>
+              <td className="v">{num(r.balAdvance)}</td>
+              <td className="v">{num(r.messAllowance)}</td>
+              <td className="v">{num(r.netSalary)}</td>
+              <td className="v">{num(r.shortTimeDeduction)}</td>
+              <td className="v b">{num(r.finalSalary)}</td>
+            </tr>
+          ))}
         </tbody>
         <tfoot>
           <tr>
-            <th>Total</th>
-            <th className="v">{num(totals.base_pay)}</th>
+            <th colSpan={3}>{title} Subtotal</th>
+            <th className="v">{num(t.perMonthSalary)}</th>
             <th className="v" />
+            <th className="v">{t.leaveDays}</th>
+            <th className="v">{num(t.deductionDays)}</th>
             <th className="v" />
-            <th className="v" />
-            <th className="v">{num(totals.gross_salary)}</th>
-            <th className="v">{num(totals.short_time_deduction)}</th>
-            <th className="v">{num(totals.overtime_amount)}</th>
-            <th className="v">{num(totals.mess_allowance)}</th>
-            <th className="v">{num(totals.advance_repayment)}</th>
-            <th className="v">{num(totals.net_salary)}</th>
-            <th className="v">{num(totals.final_salary)}</th>
+            <th className="v">{num(t.grossSalary)}</th>
+            <th className="v">{num(t.overtimeAmount)}</th>
+            <th className="v">{num(t.totalAdvance)}</th>
+            <th className="v">{num(t.deductionThisMonth)}</th>
+            <th className="v">{num(t.balAdvance)}</th>
+            <th className="v">{num(t.messAllowance)}</th>
+            <th className="v">{num(t.netSalary)}</th>
+            <th className="v">{num(t.shortTimeDeduction)}</th>
+            <th className="v">{num(t.finalSalary)}</th>
           </tr>
         </tfoot>
+      </table>
+    </>
+  );
+}
+
+function SalaryLedgerPrintView({
+  monthLabel,
+  office,
+  labour,
+}: {
+  monthLabel: string;
+  office: SalaryLedgerRow[];
+  labour: SalaryLedgerRow[];
+}) {
+  const all = [...office, ...labour];
+  if (all.length === 0) return null;
+  const num = (n: number) => formatNumber(n, 2);
+  const grand = sumSalaryLedgerRows(all);
+  const fontSize = compactPrintFontSize(all.length + 6);
+  return (
+    <div
+      className="print-plain landscape hidden print:block"
+      style={{ "--pp-font-size": `${fontSize}px` } as React.CSSProperties}
+    >
+      <p className="pp-hdr">MANZA TEXTILE MILLS</p>
+      <p className="pp-sub">FOR THE MONTH OF {monthLabel.toUpperCase()}</p>
+      <SalaryLedgerSection title="Office Staff" rows={office} />
+      <SalaryLedgerSection title="Labour Staff" rows={labour} />
+      <table>
+        <tbody>
+          <tr>
+            <th colSpan={3}>Grand Total</th>
+            <th className="v">{num(grand.perMonthSalary)}</th>
+            <th className="v" />
+            <th className="v">{grand.leaveDays}</th>
+            <th className="v">{num(grand.deductionDays)}</th>
+            <th className="v" />
+            <th className="v">{num(grand.grossSalary)}</th>
+            <th className="v">{num(grand.overtimeAmount)}</th>
+            <th className="v">{num(grand.totalAdvance)}</th>
+            <th className="v">{num(grand.deductionThisMonth)}</th>
+            <th className="v">{num(grand.balAdvance)}</th>
+            <th className="v">{num(grand.messAllowance)}</th>
+            <th className="v">{num(grand.netSalary)}</th>
+            <th className="v">{num(grand.shortTimeDeduction)}</th>
+            <th className="v">{num(grand.finalSalary)}</th>
+          </tr>
+        </tbody>
       </table>
     </div>
   );

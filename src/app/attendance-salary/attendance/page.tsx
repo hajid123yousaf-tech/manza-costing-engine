@@ -1,9 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { dateLabel, fromTimeInputValue, todayIso, toTimeInputValue } from "@/lib/attendanceSalary";
-import { downloadAttendanceExcel } from "@/lib/attendanceSalaryExcel";
+import {
+  compactPrintFontSize,
+  computeMonthlyAttendanceStats,
+  currentMonthInput,
+  dateLabel,
+  fromTimeInputValue,
+  monthInputToPeriod,
+  monthLabel,
+  monthRange,
+  splitByCategory,
+  sumMonthlySummaryRows,
+  todayIso,
+  toTimeInputValue,
+  type MonthlySummaryRow,
+} from "@/lib/attendanceSalary";
+import { downloadAttendanceExcel, downloadMonthlySummaryExcel } from "@/lib/attendanceSalaryExcel";
+import { formatNumber, formatMoney } from "@/lib/format";
 import {
   ATTENDANCE_STATUSES,
   SHIFTS,
@@ -48,6 +63,13 @@ export default function AttendancePage() {
   const [date, setDate] = useState(todayIso());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+
+  const [view, setView] = useState<"daily" | "summary">("daily");
+  const [summaryMonth, setSummaryMonth] = useState(currentMonthInput());
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryRows, setSummaryRows] = useState<
+    { employee: Employee; row: MonthlySummaryRow }[]
+  >([]);
 
   const load = useCallback(async (forDate: string) => {
     setLoading(true);
@@ -94,6 +116,63 @@ export default function AttendancePage() {
       await load(date);
     })();
   }, [date, load]);
+
+  const loadSummary = useCallback(async (monthInput: string) => {
+    setSummaryLoading(true);
+    setError(null);
+    const period = monthInputToPeriod(monthInput);
+    const { start, end } = monthRange(period);
+    const [empRes, recRes] = await Promise.all([
+      supabase
+        .from("employees")
+        .select("*")
+        .eq("is_active", true)
+        .order("employee_code", { ascending: true }),
+      supabase.from("attendance_records").select("*").gte("date", start).lte("date", end),
+    ]);
+    if (empRes.error || recRes.error) {
+      setError(empRes.error?.message || recRes.error?.message || "Failed to load.");
+      setSummaryLoading(false);
+      return;
+    }
+    const emps = (empRes.data ?? []) as Employee[];
+    const records = (recRes.data ?? []) as AttendanceRecord[];
+    const recordsByEmployee = new Map<string, AttendanceRecord[]>();
+    for (const r of records) {
+      const list = recordsByEmployee.get(r.employee_id) ?? [];
+      list.push(r);
+      recordsByEmployee.set(r.employee_id, list);
+    }
+    setSummaryRows(
+      emps.map((employee) => {
+        const stats = computeMonthlyAttendanceStats(
+          employee,
+          period,
+          recordsByEmployee.get(employee.id) ?? [],
+        );
+        return {
+          employee,
+          row: { employeeName: employee.name, designation: employee.designation ?? "", ...stats },
+        };
+      }),
+    );
+    setSummaryLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (view !== "summary") return;
+    void (async () => {
+      await loadSummary(summaryMonth);
+    })();
+  }, [view, summaryMonth, loadSummary]);
+
+  const summary = useMemo(() => {
+    const withCategory = summaryRows.map(({ employee, row }) => ({
+      ...row,
+      staff_category: employee.staff_category,
+    }));
+    return splitByCategory(withCategory);
+  }, [summaryRows]);
 
   function patch(employeeId: string, patchValue: Partial<Draft>) {
     setDrafts((prev) => ({
@@ -144,58 +223,113 @@ export default function AttendancePage() {
       <div className="print:hidden">
       <PageHeader
         title="Attendance"
-        description="Mark today's attendance, or step back to review and correct an earlier date."
+        description={
+          view === "daily"
+            ? "Mark today's attendance, or step back to review and correct an earlier date."
+            : "Days present, absent, leave, late minutes and overtime for every active employee this month."
+        }
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => shiftDate(-1)} aria-label="Previous day">
-            ←
-          </Button>
-          <input
-            type="date"
-            className="field max-w-[10rem]"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-          <Button onClick={() => shiftDate(1)} aria-label="Next day">
-            →
-          </Button>
-          {date !== todayIso() ? (
-            <Button onClick={() => setDate(todayIso())}>Today</Button>
-          ) : null}
-          {employees.length > 0 ? (
-            <>
-              <Button onClick={() => window.print()}>Print</Button>
-              <Button
-                onClick={() =>
-                  downloadAttendanceExcel(
-                    dateLabel(date),
-                    employees.map((e) => {
-                      const d = drafts[e.id];
-                      const needsTime = timeNeeded(d.status);
-                      return {
-                        employeeCode: e.employee_code,
-                        employeeName: e.name,
-                        designation: e.designation ?? "",
-                        status: STATUS_LABEL[d.status],
-                        checkIn: needsTime ? d.check_in : "",
-                        checkOut: needsTime ? d.check_out : "",
-                        shift: e.staff_category === "labour" ? d.shift : "",
-                      };
-                    }),
-                  )
-                }
+          <div className="inline-flex gap-1 rounded-full border border-hairline bg-canvas p-1">
+            {(["daily", "summary"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={cn(
+                  "rounded-full px-3.5 py-1.5 text-[0.85rem] font-medium transition-colors",
+                  view === v ? "bg-ink text-white" : "text-ink-soft hover:text-ink",
+                )}
               >
-                Download Excel
+                {v === "daily" ? "Daily" : "Monthly Summary"}
+              </button>
+            ))}
+          </div>
+
+          {view === "daily" ? (
+            <>
+              <Button onClick={() => shiftDate(-1)} aria-label="Previous day">
+                ←
               </Button>
+              <input
+                type="date"
+                className="field max-w-[10rem]"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+              <Button onClick={() => shiftDate(1)} aria-label="Next day">
+                →
+              </Button>
+              {date !== todayIso() ? (
+                <Button onClick={() => setDate(todayIso())}>Today</Button>
+              ) : null}
+              {employees.length > 0 ? (
+                <>
+                  <Button onClick={() => window.print()}>Print</Button>
+                  <Button
+                    onClick={() => {
+                      const rows = employees.map((e) => {
+                        const d = drafts[e.id];
+                        const needsTime = timeNeeded(d.status);
+                        return {
+                          employeeCode: e.employee_code,
+                          employeeName: e.name,
+                          designation: e.designation ?? "",
+                          status: STATUS_LABEL[d.status],
+                          checkIn: needsTime ? d.check_in : "",
+                          checkOut: needsTime ? d.check_out : "",
+                          shift: e.staff_category === "labour" ? d.shift : "",
+                          staff_category: e.staff_category,
+                        };
+                      });
+                      const { office, labour } = splitByCategory(rows);
+                      downloadAttendanceExcel(dateLabel(date), office, labour);
+                    }}
+                  >
+                    Download Excel
+                  </Button>
+                </>
+              ) : null}
             </>
-          ) : null}
+          ) : (
+            <>
+              <input
+                type="month"
+                className="field max-w-[10rem]"
+                value={summaryMonth}
+                onChange={(e) => setSummaryMonth(e.target.value)}
+              />
+              {summary.office.length + summary.labour.length > 0 ? (
+                <>
+                  <Button onClick={() => window.print()}>Print</Button>
+                  <Button
+                    onClick={() =>
+                      downloadMonthlySummaryExcel(
+                        monthLabel(monthInputToPeriod(summaryMonth)),
+                        summary.office,
+                        summary.labour,
+                      )
+                    }
+                  >
+                    Download Excel
+                  </Button>
+                </>
+              ) : null}
+            </>
+          )}
         </div>
       </PageHeader>
 
       {error ? <ErrorNote message={error} /> : null}
       {success ? <SuccessNote message={success} /> : null}
 
-      {loading ? (
+      {view === "summary" ? (
+        summaryLoading ? (
+          <Spinner label="Loading summary…" />
+        ) : (
+          <AttendanceSummaryTables office={summary.office} labour={summary.labour} />
+        )
+      ) : loading ? (
         <Spinner label="Loading attendance…" />
       ) : (
         <Card className="overflow-hidden">
@@ -306,25 +440,117 @@ export default function AttendancePage() {
         </Card>
       )}
       </div>
-      <AttendancePrintView date={date} employees={employees} drafts={drafts} />
+      {view === "daily" ? (
+        <AttendanceDailyPrintView date={date} employees={employees} drafts={drafts} />
+      ) : (
+        <MonthlySummaryPrintView
+          monthLabel={monthLabel(monthInputToPeriod(summaryMonth))}
+          office={summary.office}
+          labour={summary.labour}
+        />
+      )}
     </>
   );
 }
 
-function AttendancePrintView({
-  date,
+/** On-screen (non-print) read-only preview for the Monthly Summary tab. */
+function AttendanceSummaryTables({
+  office,
+  labour,
+}: {
+  office: MonthlySummaryRow[];
+  labour: MonthlySummaryRow[];
+}) {
+  if (office.length === 0 && labour.length === 0) {
+    return (
+      <Card className="p-10 text-center">
+        <p className="text-[0.95rem] text-ink-soft">
+          No active employees, or no attendance recorded for this month yet.
+        </p>
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-6">
+      <SummarySection title="Office Staff" rows={office} />
+      <SummarySection title="Labour Staff" rows={labour} />
+    </div>
+  );
+}
+
+function SummarySection({ title, rows }: { title: string; rows: MonthlySummaryRow[] }) {
+  if (rows.length === 0) return null;
+  const t = sumMonthlySummaryRows(rows);
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-hairline px-4 py-3">
+        <h2 className="text-[1rem] font-semibold text-ink">{title}</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-[0.9rem]">
+          <thead>
+            <tr className="border-b border-hairline text-[0.78rem] font-medium text-ink-soft">
+              <th className="px-3 py-2 font-medium">Employee</th>
+              <th className="px-3 py-2 text-right font-medium">Present</th>
+              <th className="px-3 py-2 text-right font-medium">Absent</th>
+              <th className="px-3 py-2 text-right font-medium">Leave</th>
+              <th className="px-3 py-2 text-right font-medium">Half day</th>
+              <th className="px-3 py-2 text-right font-medium">Late (min)</th>
+              <th className="px-3 py-2 text-right font-medium">OT (min)</th>
+              <th className="px-3 py-2 text-right font-medium">Short time</th>
+              <th className="px-3 py-2 text-right font-medium">Overtime</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.employeeName + r.designation} className="border-b border-hairline last:border-0">
+                <td className="px-3 py-2">
+                  <p className="font-medium text-ink">{r.employeeName}</p>
+                  <p className="text-[0.75rem] text-ink-soft">{r.designation || "—"}</p>
+                </td>
+                <td className="px-3 py-2 text-right">{r.present}</td>
+                <td className="px-3 py-2 text-right">{r.absent}</td>
+                <td className="px-3 py-2 text-right">{r.leave}</td>
+                <td className="px-3 py-2 text-right">{r.halfDay}</td>
+                <td className="px-3 py-2 text-right">{r.lateMinutes}</td>
+                <td className="px-3 py-2 text-right">{r.overtimeMinutes}</td>
+                <td className="px-3 py-2 text-right">{formatMoney(r.shortTimeAmount, "PKR")}</td>
+                <td className="px-3 py-2 text-right">{formatMoney(r.overtimeAmount, "PKR")}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-canvas font-bold text-ink">
+              <td className="px-3 py-3">Total</td>
+              <td className="px-3 py-3 text-right">{t.present}</td>
+              <td className="px-3 py-3 text-right">{t.absent}</td>
+              <td className="px-3 py-3 text-right">{t.leave}</td>
+              <td className="px-3 py-3 text-right">{t.halfDay}</td>
+              <td className="px-3 py-3 text-right">{t.lateMinutes}</td>
+              <td className="px-3 py-3 text-right">{t.overtimeMinutes}</td>
+              <td className="px-3 py-3 text-right">{formatMoney(t.shortTimeAmount, "PKR")}</td>
+              <td className="px-3 py-3 text-right">{formatMoney(t.overtimeAmount, "PKR")}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function AttendanceDailyPrintSection({
+  title,
   employees,
   drafts,
 }: {
-  date: string;
+  title: string;
   employees: Employee[];
   drafts: Record<string, Draft>;
 }) {
   if (employees.length === 0) return null;
   return (
-    <div className="print-plain hidden print:block">
-      <p className="pp-hdr">MANZA TEXTILE MILLS</p>
-      <p className="pp-sub">Attendance — {dateLabel(date)}</p>
+    <>
+      <p className="pp-section">{title}</p>
       <table>
         <thead>
           <tr>
@@ -357,6 +583,107 @@ function AttendancePrintView({
           })}
         </tbody>
       </table>
+    </>
+  );
+}
+
+function AttendanceDailyPrintView({
+  date,
+  employees,
+  drafts,
+}: {
+  date: string;
+  employees: Employee[];
+  drafts: Record<string, Draft>;
+}) {
+  if (employees.length === 0) return null;
+  const { office, labour } = splitByCategory(employees);
+  return (
+    <div className="print-plain hidden print:block">
+      <p className="pp-hdr">MANZA TEXTILE MILLS</p>
+      <p className="pp-sub">Attendance — {dateLabel(date)}</p>
+      <AttendanceDailyPrintSection title="Office Staff" employees={office} drafts={drafts} />
+      <AttendanceDailyPrintSection title="Labour Staff" employees={labour} drafts={drafts} />
+    </div>
+  );
+}
+
+function MonthlySummarySection({ title, rows }: { title: string; rows: MonthlySummaryRow[] }) {
+  if (rows.length === 0) return null;
+  const t = sumMonthlySummaryRows(rows);
+  return (
+    <>
+      <p className="pp-section">{title}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Designation</th>
+            <th className="v">Present</th>
+            <th className="v">Absent</th>
+            <th className="v">Leave</th>
+            <th className="v">Half day</th>
+            <th className="v">Late (min)</th>
+            <th className="v">OT (min)</th>
+            <th className="v">Short time</th>
+            <th className="v">Overtime</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.employeeName + r.designation}>
+              <td>{r.employeeName}</td>
+              <td>{r.designation || "—"}</td>
+              <td className="v">{r.present}</td>
+              <td className="v">{r.absent}</td>
+              <td className="v">{r.leave}</td>
+              <td className="v">{r.halfDay}</td>
+              <td className="v">{r.lateMinutes}</td>
+              <td className="v">{r.overtimeMinutes}</td>
+              <td className="v">{formatNumber(r.shortTimeAmount, 2)}</td>
+              <td className="v b">{formatNumber(r.overtimeAmount, 2)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th colSpan={2}>{title} Subtotal</th>
+            <th className="v">{t.present}</th>
+            <th className="v">{t.absent}</th>
+            <th className="v">{t.leave}</th>
+            <th className="v">{t.halfDay}</th>
+            <th className="v">{t.lateMinutes}</th>
+            <th className="v">{t.overtimeMinutes}</th>
+            <th className="v">{formatNumber(t.shortTimeAmount, 2)}</th>
+            <th className="v">{formatNumber(t.overtimeAmount, 2)}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </>
+  );
+}
+
+function MonthlySummaryPrintView({
+  monthLabel,
+  office,
+  labour,
+}: {
+  monthLabel: string;
+  office: MonthlySummaryRow[];
+  labour: MonthlySummaryRow[];
+}) {
+  const total = office.length + labour.length;
+  if (total === 0) return null;
+  const fontSize = compactPrintFontSize(total + 4);
+  return (
+    <div
+      className="print-plain hidden print:block"
+      style={{ "--pp-font-size": `${fontSize}px` } as React.CSSProperties}
+    >
+      <p className="pp-hdr">MANZA TEXTILE MILLS</p>
+      <p className="pp-sub">Monthly Attendance Summary — {monthLabel}</p>
+      <MonthlySummarySection title="Office Staff" rows={office} />
+      <MonthlySummarySection title="Labour Staff" rows={labour} />
     </div>
   );
 }

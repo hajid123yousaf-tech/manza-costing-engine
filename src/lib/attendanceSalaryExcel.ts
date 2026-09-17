@@ -1,5 +1,11 @@
 import * as XLSX from "xlsx-js-style";
 import { BORDER, ST } from "./excel";
+import {
+  sumMonthlySummaryRows,
+  sumSalaryLedgerRows,
+  type MonthlySummaryRow,
+  type SalaryLedgerRow,
+} from "./attendanceSalary";
 
 const round = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 
@@ -76,116 +82,124 @@ function filenameSafe(name: string): string {
   return name.replace(/[^\w\- ]+/g, "").replace(/\s+/g, " ").trim();
 }
 
-/* ---------- Salary ---------- */
-
-export interface SalaryExportRow {
-  employeeCode: number;
-  employeeName: string;
-  payType: "monthly" | "daily";
-  timeTrackingEnabled: boolean;
-  base_pay: number;
-  per_day_rate: number;
-  leave_days: number;
-  deduction_days: number;
-  gross_salary: number;
-  short_time_deduction: number;
-  overtime_amount: number;
-  mess_allowance: number;
-  advance_repayment: number;
-  net_salary: number;
-  final_salary: number;
-}
+/* ---------- Salary ledger (matches the reference "MANZA TEXTILE MILLS" format) ---------- */
 
 const SALARY_HEADERS = [
-  "Employee",
-  "Pay type",
-  "Base pay",
-  "Per day",
-  "Leave days",
-  "Deduct days",
-  "Gross",
-  "Short time",
-  "Overtime",
-  "Mess",
-  "Advance",
-  "Net",
-  "Final",
+  "S#",
+  "Name",
+  "Designation",
+  "Per Month Salary",
+  "Days of Month",
+  "Leave",
+  "Deduction days",
+  "Per Day Rate Base on 30",
+  "Gross Salary",
+  "Over time",
+  "Total Advance",
+  "Deduction in this Month",
+  "Bal Advance",
+  "Mess Allowance",
+  "Net Salary",
+  "Short Time Deduction",
+  "Final Salary",
 ];
+const SALARY_LAST_COL = SALARY_HEADERS.length - 1;
 
-export function downloadSalaryExcel(monthLabel: string, rows: SalaryExportRow[]): void {
+function writeSalaryRow(
+  put: ReturnType<typeof sheetBuilder>["put"],
+  r: number,
+  row: SalaryLedgerRow,
+): void {
+  put(r, 0, row.sNo, ST.value, "n");
+  put(r, 1, row.employeeName, TEXT, "s");
+  put(r, 2, row.designation || "—", TEXT, "s");
+  put(r, 3, round(row.perMonthSalary), ST.value, "n");
+  put(r, 4, row.daysOfMonth, ST.value, "n");
+  put(r, 5, row.leaveDays, ST.value, "n");
+  put(r, 6, round(row.deductionDays), ST.value, "n");
+  put(r, 7, round(row.perDayRate), ST.value, "n");
+  put(r, 8, round(row.grossSalary), ST.value, "n");
+  put(r, 9, round(row.overtimeAmount), ST.value, "n");
+  put(r, 10, round(row.totalAdvance), ST.value, "n");
+  put(r, 11, round(row.deductionThisMonth), ST.value, "n");
+  put(r, 12, round(row.balAdvance), ST.value, "n");
+  put(r, 13, round(row.messAllowance), ST.value, "n");
+  put(r, 14, round(row.netSalary), ST.value, "n");
+  put(r, 15, round(row.shortTimeDeduction), ST.value, "n");
+  put(r, 16, round(row.finalSalary), ST.valueBold, "n");
+}
+
+function writeSalaryTotalsRow(
+  put: ReturnType<typeof sheetBuilder>["put"],
+  r: number,
+  label: string,
+  rows: SalaryLedgerRow[],
+): void {
+  const t = sumSalaryLedgerRows(rows);
+  put(r, 0, "", ST.valueBold, "s");
+  put(r, 1, label, COL_HEADER, "s");
+  put(r, 2, "", ST.valueBold, "s");
+  put(r, 3, round(t.perMonthSalary), ST.valueBold, "n");
+  put(r, 4, "", ST.valueBold, "s");
+  put(r, 5, t.leaveDays, ST.valueBold, "n");
+  put(r, 6, round(t.deductionDays), ST.valueBold, "n");
+  put(r, 7, "", ST.valueBold, "s");
+  put(r, 8, round(t.grossSalary), ST.valueBold, "n");
+  put(r, 9, round(t.overtimeAmount), ST.valueBold, "n");
+  put(r, 10, round(t.totalAdvance), ST.valueBold, "n");
+  put(r, 11, round(t.deductionThisMonth), ST.valueBold, "n");
+  put(r, 12, round(t.balAdvance), ST.valueBold, "n");
+  put(r, 13, round(t.messAllowance), ST.valueBold, "n");
+  put(r, 14, round(t.netSalary), ST.valueBold, "n");
+  put(r, 15, round(t.shortTimeDeduction), ST.valueBold, "n");
+  put(r, 16, round(t.finalSalary), ST.valueBold, "n");
+}
+
+export function downloadSalaryLedgerExcel(
+  monthLabel: string,
+  office: SalaryLedgerRow[],
+  labour: SalaryLedgerRow[],
+): void {
   const { put, titleBlock, finish } = sheetBuilder();
-  const lastCol = SALARY_HEADERS.length - 1;
 
-  titleBlock("MANZA TEXTILE MILLS", `Salary — ${monthLabel}`, lastCol);
-
+  titleBlock("MANZA TEXTILE MILLS", `FOR THE MONTH OF ${monthLabel.toUpperCase()}`, SALARY_LAST_COL);
   let r = 3;
-  SALARY_HEADERS.forEach((h, c) => put(r, c, h, COL_HEADER, "s"));
-  r += 1;
 
-  const totals = {
-    base_pay: 0,
-    gross_salary: 0,
-    short_time_deduction: 0,
-    overtime_amount: 0,
-    mess_allowance: 0,
-    advance_repayment: 0,
-    net_salary: 0,
-    final_salary: 0,
-  };
-
-  for (const row of rows) {
-    put(r, 0, `#${row.employeeCode} ${row.employeeName}`, TEXT, "s");
-    put(r, 1, row.payType === "monthly" ? "Monthly" : "Daily", TEXT, "s");
-    put(r, 2, round(row.base_pay), ST.value, "n");
-    put(r, 3, row.payType === "monthly" ? round(row.per_day_rate) : "", ST.value);
-    put(r, 4, row.leave_days, ST.value, "n");
-    put(r, 5, row.payType === "monthly" ? round(row.deduction_days) : "", ST.value);
-    put(r, 6, round(row.gross_salary), ST.value, "n");
-    put(r, 7, row.timeTrackingEnabled ? round(row.short_time_deduction) : "Not tracked", ST.value);
-    put(r, 8, row.timeTrackingEnabled ? round(row.overtime_amount) : "Not tracked", ST.value);
-    put(r, 9, round(row.mess_allowance), ST.value, "n");
-    put(r, 10, round(row.advance_repayment), ST.value, "n");
-    put(r, 11, round(row.net_salary), ST.value, "n");
-    put(r, 12, round(row.final_salary), ST.value, "n");
+  function writeSection(title: string, rows: SalaryLedgerRow[]) {
+    if (rows.length === 0) return;
+    put(r, 0, title, TITLE_ROW, "s");
     r += 1;
-
-    totals.base_pay += row.base_pay;
-    totals.gross_salary += row.gross_salary;
-    totals.short_time_deduction += row.short_time_deduction;
-    totals.overtime_amount += row.overtime_amount;
-    totals.mess_allowance += row.mess_allowance;
-    totals.advance_repayment += row.advance_repayment;
-    totals.net_salary += row.net_salary;
-    totals.final_salary += row.final_salary;
+    SALARY_HEADERS.forEach((h, c) => put(r, c, h, COL_HEADER, "s"));
+    r += 1;
+    for (const row of rows) {
+      writeSalaryRow(put, r, row);
+      r += 1;
+    }
+    writeSalaryTotalsRow(put, r, `${title} Subtotal`, rows);
+    r += 2;
   }
 
-  put(r, 0, "Total", COL_HEADER, "s");
-  put(r, 1, "", TEXT, "s");
-  put(r, 2, round(totals.base_pay), ST.valueBold, "n");
-  put(r, 3, "", ST.valueBold, "s");
-  put(r, 4, "", ST.valueBold, "s");
-  put(r, 5, "", ST.valueBold, "s");
-  put(r, 6, round(totals.gross_salary), ST.valueBold, "n");
-  put(r, 7, round(totals.short_time_deduction), ST.valueBold, "n");
-  put(r, 8, round(totals.overtime_amount), ST.valueBold, "n");
-  put(r, 9, round(totals.mess_allowance), ST.valueBold, "n");
-  put(r, 10, round(totals.advance_repayment), ST.valueBold, "n");
-  put(r, 11, round(totals.net_salary), ST.valueBold, "n");
-  put(r, 12, round(totals.final_salary), ST.valueBold, "n");
+  writeSection("Office Staff", office);
+  writeSection("Labour Staff", labour);
+  writeSalaryTotalsRow(put, r, "Grand Total", [...office, ...labour]);
 
   const ws = finish([
-    { wch: 22 },
-    { wch: 10 },
-    { wch: 11 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 11 },
-    { wch: 11 },
-    { wch: 11 },
-    { wch: 10 },
+    { wch: 5 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 13 },
+    { wch: 8 },
+    { wch: 7 },
     { wch: 9 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 11 },
     { wch: 10 },
     { wch: 11 },
+    { wch: 12 },
     { wch: 11 },
   ]);
   const wb = XLSX.utils.book_new();
@@ -206,26 +220,46 @@ export interface AttendanceExportRow {
 }
 
 const ATTENDANCE_HEADERS = ["Employee", "Designation", "Status", "Check in", "Check out", "Shift"];
+const ATTENDANCE_LAST_COL = ATTENDANCE_HEADERS.length - 1;
 
-export function downloadAttendanceExcel(dateLabel: string, rows: AttendanceExportRow[]): void {
+function writeAttendanceRow(
+  put: ReturnType<typeof sheetBuilder>["put"],
+  r: number,
+  row: AttendanceExportRow,
+): void {
+  put(r, 0, `#${row.employeeCode} ${row.employeeName}`, TEXT, "s");
+  put(r, 1, row.designation || "—", TEXT, "s");
+  put(r, 2, row.status, TEXT, "s");
+  put(r, 3, row.checkIn || "—", TEXT, "s");
+  put(r, 4, row.checkOut || "—", TEXT, "s");
+  put(r, 5, row.shift || "—", TEXT, "s");
+}
+
+export function downloadAttendanceExcel(
+  dateLabel: string,
+  office: AttendanceExportRow[],
+  labour: AttendanceExportRow[],
+): void {
   const { put, titleBlock, finish } = sheetBuilder();
-  const lastCol = ATTENDANCE_HEADERS.length - 1;
 
-  titleBlock("MANZA TEXTILE MILLS", `Attendance — ${dateLabel}`, lastCol);
-
+  titleBlock("MANZA TEXTILE MILLS", `Attendance — ${dateLabel}`, ATTENDANCE_LAST_COL);
   let r = 3;
-  ATTENDANCE_HEADERS.forEach((h, c) => put(r, c, h, COL_HEADER, "s"));
-  r += 1;
 
-  for (const row of rows) {
-    put(r, 0, `#${row.employeeCode} ${row.employeeName}`, TEXT, "s");
-    put(r, 1, row.designation || "—", TEXT, "s");
-    put(r, 2, row.status, TEXT, "s");
-    put(r, 3, row.checkIn || "—", TEXT, "s");
-    put(r, 4, row.checkOut || "—", TEXT, "s");
-    put(r, 5, row.shift || "—", TEXT, "s");
+  function writeSection(title: string, rows: AttendanceExportRow[]) {
+    if (rows.length === 0) return;
+    put(r, 0, title, TITLE_ROW, "s");
+    r += 1;
+    ATTENDANCE_HEADERS.forEach((h, c) => put(r, c, h, COL_HEADER, "s"));
+    r += 1;
+    for (const row of rows) {
+      writeAttendanceRow(put, r, row);
+      r += 1;
+    }
     r += 1;
   }
+
+  writeSection("Office Staff", office);
+  writeSection("Labour Staff", labour);
 
   const ws = finish([
     { wch: 22 },
@@ -238,6 +272,102 @@ export function downloadAttendanceExcel(dateLabel: string, rows: AttendanceExpor
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Attendance");
   XLSX.writeFile(wb, `${filenameSafe(`Attendance ${dateLabel}`)}.xlsx`);
+}
+
+/* ---------- Monthly attendance summary ---------- */
+
+const SUMMARY_HEADERS = [
+  "Employee",
+  "Designation",
+  "Present",
+  "Absent",
+  "Leave",
+  "Half day",
+  "Late (min)",
+  "OT (min)",
+  "Short time",
+  "Overtime",
+];
+const SUMMARY_LAST_COL = SUMMARY_HEADERS.length - 1;
+
+function writeSummaryRow(
+  put: ReturnType<typeof sheetBuilder>["put"],
+  r: number,
+  row: MonthlySummaryRow,
+): void {
+  put(r, 0, row.employeeName, TEXT, "s");
+  put(r, 1, row.designation || "—", TEXT, "s");
+  put(r, 2, row.present, ST.value, "n");
+  put(r, 3, row.absent, ST.value, "n");
+  put(r, 4, row.leave, ST.value, "n");
+  put(r, 5, row.halfDay, ST.value, "n");
+  put(r, 6, row.lateMinutes, ST.value, "n");
+  put(r, 7, row.overtimeMinutes, ST.value, "n");
+  put(r, 8, round(row.shortTimeAmount), ST.value, "n");
+  put(r, 9, round(row.overtimeAmount), ST.value, "n");
+}
+
+function writeSummaryTotalsRow(
+  put: ReturnType<typeof sheetBuilder>["put"],
+  r: number,
+  label: string,
+  rows: MonthlySummaryRow[],
+): void {
+  const t = sumMonthlySummaryRows(rows);
+  put(r, 0, label, COL_HEADER, "s");
+  put(r, 1, "", ST.valueBold, "s");
+  put(r, 2, t.present, ST.valueBold, "n");
+  put(r, 3, t.absent, ST.valueBold, "n");
+  put(r, 4, t.leave, ST.valueBold, "n");
+  put(r, 5, t.halfDay, ST.valueBold, "n");
+  put(r, 6, t.lateMinutes, ST.valueBold, "n");
+  put(r, 7, t.overtimeMinutes, ST.valueBold, "n");
+  put(r, 8, round(t.shortTimeAmount), ST.valueBold, "n");
+  put(r, 9, round(t.overtimeAmount), ST.valueBold, "n");
+}
+
+export function downloadMonthlySummaryExcel(
+  monthLabel: string,
+  office: MonthlySummaryRow[],
+  labour: MonthlySummaryRow[],
+): void {
+  const { put, titleBlock, finish } = sheetBuilder();
+
+  titleBlock("MANZA TEXTILE MILLS", `Monthly Attendance Summary — ${monthLabel}`, SUMMARY_LAST_COL);
+  let r = 3;
+
+  function writeSection(title: string, rows: MonthlySummaryRow[]) {
+    if (rows.length === 0) return;
+    put(r, 0, title, TITLE_ROW, "s");
+    r += 1;
+    SUMMARY_HEADERS.forEach((h, c) => put(r, c, h, COL_HEADER, "s"));
+    r += 1;
+    for (const row of rows) {
+      writeSummaryRow(put, r, row);
+      r += 1;
+    }
+    writeSummaryTotalsRow(put, r, `${title} Subtotal`, rows);
+    r += 2;
+  }
+
+  writeSection("Office Staff", office);
+  writeSection("Labour Staff", labour);
+
+  const ws = finish([
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 9 },
+    { wch: 8 },
+    { wch: 10 },
+    { wch: 10 },
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Monthly Summary");
+  XLSX.writeFile(wb, `${filenameSafe(`Monthly Summary ${monthLabel}`)}.xlsx`);
 }
 
 /* ---------- Advances ---------- */
