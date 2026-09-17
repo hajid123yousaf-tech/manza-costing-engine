@@ -12,10 +12,10 @@ export function Sidebar() {
     <aside className="hidden w-60 shrink-0 flex-col border-r border-hairline bg-surface p-6 print:hidden md:flex">
       <Link href="/costing-hub" className="mb-8 flex items-center gap-2.5">
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-ink text-[0.95rem] font-bold text-white">
-          C
+          M
         </span>
         <span className="text-[1.1rem] font-semibold tracking-tight text-ink">
-          Costing Hub
+          Manza
         </span>
       </Link>
 
@@ -52,7 +52,9 @@ export function Sidebar() {
       </nav>
 
       <p className="mt-auto pt-6 text-[0.78rem] leading-relaxed text-ink-soft">
-        Totals are in PKR unless a sheet sets another display currency.
+        {pathname.startsWith("/attendance-salary")
+          ? "Salary figures are in PKR."
+          : "Totals are in PKR unless a sheet sets another display currency."}
       </p>
     </aside>
   );

@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  FileSpreadsheet,
-  FilePen,
-  Archive,
-  Package,
-  ChevronRight,
-  type LucideIcon,
-} from "lucide-react";
+import { FileSpreadsheet, FilePen, Archive, Package } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { loadSheetTotals, type SheetTotal } from "@/lib/sheetTotals";
 import { formatMoney, formatDate, serial } from "@/lib/format";
@@ -18,7 +11,9 @@ import {
   ButtonLink,
   Card,
   EmptyState,
+  EntryCard,
   ErrorNote,
+  KpiCard,
   PageHeader,
   SerialBadge,
   Spinner,
@@ -30,14 +25,6 @@ interface Kpis {
   draft: number;
   archived: number;
 }
-
-type Family = "peach" | "lavender" | "mint";
-
-const FAMILY: Record<Family, { card: string; badge: string }> = {
-  peach: { card: "bg-peach", badge: "bg-peach-badge" },
-  lavender: { card: "bg-lavender", badge: "bg-lavender-badge" },
-  mint: { card: "bg-mint", badge: "bg-mint-badge" },
-};
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -211,64 +198,5 @@ export default function DashboardPage() {
         </>
       )}
     </div>
-  );
-}
-
-function KpiCard({
-  family,
-  icon: Icon,
-  label,
-  value,
-}: {
-  family: Family;
-  icon: LucideIcon;
-  label: string;
-  value: number;
-}) {
-  const f = FAMILY[family];
-  return (
-    <div className={`rounded-2xl p-6 ${f.card}`}>
-      <span
-        className={`mb-4 flex h-10 w-10 items-center justify-center rounded-full text-white ${f.badge}`}
-      >
-        <Icon size={20} strokeWidth={2} />
-      </span>
-      <p className="text-[2rem] font-bold leading-none tracking-tight text-ink">
-        {value}
-      </p>
-      <p className="mt-1.5 text-[0.9rem] font-medium text-ink-soft">{label}</p>
-    </div>
-  );
-}
-
-/** Large entry-point card — the module's two main sections. */
-function EntryCard({
-  href,
-  icon: Icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: LucideIcon;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group flex items-center gap-4 rounded-2xl border border-hairline bg-surface p-6 transition-shadow hover:shadow-[0_10px_30px_-14px_rgba(28,30,33,0.22)]"
-    >
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-canvas text-ink">
-        <Icon size={22} strokeWidth={2} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[1.05rem] font-semibold text-ink">{title}</p>
-        <p className="mt-0.5 text-[0.85rem] text-ink-soft">{description}</p>
-      </div>
-      <ChevronRight
-        size={18}
-        className="shrink-0 text-ink-soft transition-transform group-hover:translate-x-0.5"
-      />
-    </Link>
   );
 }

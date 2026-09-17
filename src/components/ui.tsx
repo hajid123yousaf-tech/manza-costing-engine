@@ -6,6 +6,7 @@ import type {
   ButtonHTMLAttributes,
   ReactNode,
 } from "react";
+import { ChevronRight, type LucideIcon } from "lucide-react";
 
 export function cn(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -184,6 +185,79 @@ export function SerialBadge({ children }: { children: ReactNode }) {
     <span className="inline-flex items-center rounded-lg bg-canvas px-2 py-0.5 text-[0.8rem] font-medium text-ink-soft">
       {children}
     </span>
+  );
+}
+
+/* ---------- Dashboard cards ---------- */
+
+export type PastelFamily = "peach" | "lavender" | "mint";
+
+const PASTEL_FAMILY: Record<PastelFamily, { card: string; badge: string }> = {
+  peach: { card: "bg-peach", badge: "bg-peach-badge" },
+  lavender: { card: "bg-lavender", badge: "bg-lavender-badge" },
+  mint: { card: "bg-mint", badge: "bg-mint-badge" },
+};
+
+/** Small pastel stat tile used on module dashboards. */
+export function KpiCard({
+  family,
+  icon: Icon,
+  label,
+  value,
+}: {
+  family: PastelFamily;
+  icon: LucideIcon;
+  label: string;
+  value: ReactNode;
+}) {
+  const f = PASTEL_FAMILY[family];
+  return (
+    <div className={cn("rounded-2xl p-6", f.card)}>
+      <span
+        className={cn(
+          "mb-4 flex h-10 w-10 items-center justify-center rounded-full text-white",
+          f.badge,
+        )}
+      >
+        <Icon size={20} strokeWidth={2} />
+      </span>
+      <p className="text-[2rem] font-bold leading-none tracking-tight text-ink">
+        {value}
+      </p>
+      <p className="mt-1.5 text-[0.9rem] font-medium text-ink-soft">{label}</p>
+    </div>
+  );
+}
+
+/** Large entry-point card — a module dashboard's main sections. */
+export function EntryCard({
+  href,
+  icon: Icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-4 rounded-2xl border border-hairline bg-surface p-6 transition-shadow hover:shadow-[0_10px_30px_-14px_rgba(28,30,33,0.22)]"
+    >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-canvas text-ink">
+        <Icon size={22} strokeWidth={2} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[1.05rem] font-semibold text-ink">{title}</p>
+        <p className="mt-0.5 text-[0.85rem] text-ink-soft">{description}</p>
+      </div>
+      <ChevronRight
+        size={18}
+        className="shrink-0 text-ink-soft transition-transform group-hover:translate-x-0.5"
+      />
+    </Link>
   );
 }
 

@@ -14,10 +14,10 @@ const round = (n: number) =>
 /* ---------- cell styles ---------- */
 
 const THIN = { style: "thin", color: { rgb: "000000" } };
-const BORDER = { top: THIN, bottom: THIN, left: THIN, right: THIN };
+export const BORDER = { top: THIN, bottom: THIN, left: THIN, right: THIN };
 const YELLOW = { fgColor: { rgb: "FFF2B2" } };
 
-const ST = {
+export const ST = {
   label: {
     font: { bold: true },
     border: BORDER,
@@ -55,7 +55,7 @@ const ST = {
   },
 } as const;
 
-type Style = (typeof ST)[keyof typeof ST];
+export type Style = (typeof ST)[keyof typeof ST];
 
 interface Cell {
   v: string | number;
