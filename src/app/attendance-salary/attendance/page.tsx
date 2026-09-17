@@ -7,6 +7,7 @@ import {
   computeMonthlyAttendanceStats,
   currentMonthInput,
   dateLabel,
+  formatTime12,
   fromTimeInputValue,
   monthInputToPeriod,
   monthLabel,
@@ -27,7 +28,16 @@ import {
   type Employee,
   type Shift,
 } from "@/lib/types";
-import { Button, Card, ErrorNote, PageHeader, Spinner, SuccessNote, cn } from "@/components/ui";
+import {
+  Button,
+  Card,
+  ErrorNote,
+  PageHeader,
+  Spinner,
+  SuccessNote,
+  TimePicker,
+  cn,
+} from "@/components/ui";
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
   present: "Present",
@@ -276,8 +286,8 @@ export default function AttendancePage() {
                           employeeName: e.name,
                           designation: e.designation ?? "",
                           status: STATUS_LABEL[d.status],
-                          checkIn: needsTime ? d.check_in : "",
-                          checkOut: needsTime ? d.check_out : "",
+                          checkIn: needsTime ? formatTime12(d.check_in) : "",
+                          checkOut: needsTime ? formatTime12(d.check_out) : "",
                           shift: e.staff_category === "labour" ? d.shift : "",
                           staff_category: e.staff_category,
                         };
@@ -375,21 +385,19 @@ export default function AttendancePage() {
                         </select>
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="time"
-                          className={cn("field min-w-[7.5rem]", !needsTime && "opacity-40")}
+                        <TimePicker
+                          className="min-w-[9rem]"
                           disabled={!needsTime}
                           value={d.check_in}
-                          onChange={(ev) => patch(e.id, { check_in: ev.target.value })}
+                          onChange={(v) => patch(e.id, { check_in: v })}
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="time"
-                          className={cn("field min-w-[7.5rem]", !needsTime && "opacity-40")}
+                        <TimePicker
+                          className="min-w-[9rem]"
                           disabled={!needsTime}
                           value={d.check_out}
-                          onChange={(ev) => patch(e.id, { check_out: ev.target.value })}
+                          onChange={(v) => patch(e.id, { check_out: v })}
                         />
                       </td>
                       <td className="px-4 py-2">
@@ -575,8 +583,8 @@ function AttendanceDailyPrintSection({
                 </td>
                 <td>{e.designation || "—"}</td>
                 <td>{STATUS_LABEL[d.status]}</td>
-                <td>{needsTime && d.check_in ? d.check_in : "—"}</td>
-                <td>{needsTime && d.check_out ? d.check_out : "—"}</td>
+                <td>{needsTime && d.check_in ? formatTime12(d.check_in) : "—"}</td>
+                <td>{needsTime && d.check_out ? formatTime12(d.check_out) : "—"}</td>
                 <td>{isLabour && d.shift ? (d.shift === "day" ? "Day" : "Night") : "—"}</td>
               </tr>
             );

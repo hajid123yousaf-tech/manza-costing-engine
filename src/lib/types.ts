@@ -207,9 +207,10 @@ export const SHIFTS: { value: Shift; label: string }[] = [
   { value: "night", label: "Night" },
 ];
 
+/** "repaid" is the DB/internal value (unchanged); user-facing copy always calls it a salary deduction, never a repayment — the employee doesn't pay cash back. */
 export const ADVANCE_TYPES: { value: AdvanceType; label: string }[] = [
   { value: "given", label: "Given" },
-  { value: "repaid", label: "Repaid" },
+  { value: "repaid", label: "Deducted" },
 ];
 
 /** Default shift times per staff category — editable per employee. */

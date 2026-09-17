@@ -131,7 +131,7 @@ export default function AdvancesPage() {
       <div className="print:hidden">
       <PageHeader
         title="Advances"
-        description="Track cash advances given to staff and what's been repaid."
+        description="Track cash advances given to staff and what's been deducted from salary."
       >
         {employees.length > 0 ? (
           <div className="flex items-center gap-2">
@@ -246,7 +246,7 @@ export default function AdvancesPage() {
                   <tr className="border-b border-hairline text-[0.8rem] font-medium text-ink-soft">
                     <th className="px-4 py-3 font-medium">Employee</th>
                     <th className="px-4 py-3 text-right font-medium">Given</th>
-                    <th className="px-4 py-3 text-right font-medium">Repaid</th>
+                    <th className="px-4 py-3 text-right font-medium">Deducted</th>
                     <th className="px-4 py-3 text-right font-medium">Balance</th>
                   </tr>
                 </thead>
@@ -317,7 +317,7 @@ export default function AdvancesPage() {
                       <td className="px-4 py-2 font-medium text-ink">{employeeName(t.employee_id)}</td>
                       <td className="px-4 py-2">
                         <Pill tone={t.type === "given" ? "neutral" : "mint"}>
-                          {t.type === "given" ? "Given" : "Repaid"}
+                          {t.type === "given" ? "Given" : "Deducted"}
                         </Pill>
                       </td>
                       <td className="px-4 py-2 text-right font-medium text-ink">
@@ -373,7 +373,7 @@ function AdvancesPrintView({
           <tr>
             <th>Employee</th>
             <th className="v">Given</th>
-            <th className="v">Repaid</th>
+            <th className="v">Deducted</th>
             <th className="v">Balance</th>
           </tr>
         </thead>
@@ -407,7 +407,7 @@ function AdvancesPrintView({
             <tr key={t.id}>
               <td>{dateLabel(t.date)}</td>
               <td>{employeeName(t.employee_id)}</td>
-              <td>{t.type === "given" ? "Given" : "Repaid"}</td>
+              <td>{t.type === "given" ? "Given" : "Deducted"}</td>
               <td className="v">{formatMoney(Number(t.amount), "PKR")}</td>
               <td>{t.notes || "—"}</td>
             </tr>

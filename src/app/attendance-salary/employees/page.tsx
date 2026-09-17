@@ -19,6 +19,7 @@ import {
   PageHeader,
   Pill,
   Spinner,
+  TimePicker,
   cn,
 } from "@/components/ui";
 
@@ -293,23 +294,15 @@ export default function EmployeesPage() {
               </Field>
             )}
             <Field label="Shift start">
-              <input
-                type="time"
-                className="field"
+              <TimePicker
                 value={newEmp.shift_start}
-                onChange={(e) =>
-                  setNewEmp((r) => ({ ...r, shift_start: e.target.value }))
-                }
+                onChange={(v) => setNewEmp((r) => ({ ...r, shift_start: v }))}
               />
             </Field>
             <Field label="Shift end">
-              <input
-                type="time"
-                className="field"
+              <TimePicker
                 value={newEmp.shift_end}
-                onChange={(e) =>
-                  setNewEmp((r) => ({ ...r, shift_end: e.target.value }))
-                }
+                onChange={(v) => setNewEmp((r) => ({ ...r, shift_end: v }))}
               />
             </Field>
             <div className="flex items-center pt-6">
@@ -466,22 +459,16 @@ export default function EmployeesPage() {
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-1">
-                          <input
-                            type="time"
-                            className="field min-w-[7.5rem]"
+                          <TimePicker
+                            className="min-w-[9rem]"
                             value={toTimeInputValue(valueOf(e, "shift_start"))}
-                            onChange={(ev) =>
-                              patch(e.id, "shift_start", ev.target.value)
-                            }
+                            onChange={(v) => patch(e.id, "shift_start", v)}
                           />
                           <span className="text-ink-soft">–</span>
-                          <input
-                            type="time"
-                            className="field min-w-[7.5rem]"
+                          <TimePicker
+                            className="min-w-[9rem]"
                             value={toTimeInputValue(valueOf(e, "shift_end"))}
-                            onChange={(ev) =>
-                              patch(e.id, "shift_end", ev.target.value)
-                            }
+                            onChange={(v) => patch(e.id, "shift_end", v)}
                           />
                         </div>
                       </td>

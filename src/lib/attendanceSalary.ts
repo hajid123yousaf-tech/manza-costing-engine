@@ -74,6 +74,38 @@ export function fromTimeInputValue(t: string): string {
   return t.length === 5 ? `${t}:00` : t;
 }
 
+export interface Time12 {
+  /** 1-12 */
+  hour: number;
+  /** 0-59 */
+  minute: number;
+  ampm: "AM" | "PM";
+}
+
+/** "HH:MM" or "HH:MM:SS" (24-hour) -> 12-hour parts. Null-safe. */
+export function to12Hour(t: string | null | undefined): Time12 | null {
+  const mins = timeToMinutes(t);
+  if (mins === null) return null;
+  const h24 = Math.floor(mins / 60);
+  const minute = mins % 60;
+  const ampm: "AM" | "PM" = h24 >= 12 ? "PM" : "AM";
+  const hour = h24 % 12 === 0 ? 12 : h24 % 12;
+  return { hour, minute, ampm };
+}
+
+/** 12-hour parts -> "HH:MM" (24-hour) — the same shape `fromTimeInputValue`/time inputs use. */
+export function from12Hour(hour: number, minute: number, ampm: "AM" | "PM"): string {
+  const h24 = (hour % 12) + (ampm === "PM" ? 12 : 0);
+  return `${String(h24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/** "HH:MM"/"HH:MM:SS" -> "8:20 AM" for read-only display. Null-safe (returns ""). */
+export function formatTime12(t: string | null | undefined): string {
+  const parts = to12Hour(t);
+  if (!parts) return "";
+  return `${parts.hour}:${String(parts.minute).padStart(2, "0")} ${parts.ampm}`;
+}
+
 export function shiftHours(
   employee: Pick<Employee, "shift_start" | "shift_end">,
 ): number {
@@ -227,7 +259,7 @@ export interface GeneratedSalaryLine extends EditableSalaryFields {
  * that month, per the Salary page spec: base pay, per-day rate, leave days
  * (informational — actually a count of 'absent' records, not 'leave'; kept
  * as-is), short-time deduction and overtime are computed; deduction days,
- * mess allowance and advance repayment start at 0 for manual entry.
+ * mess allowance and the advance salary-deduction start at 0 for manual entry.
  */
 export function generateSalaryLine(
   employee: Employee,

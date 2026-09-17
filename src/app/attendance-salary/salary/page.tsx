@@ -178,12 +178,14 @@ export default function SalaryPage() {
 
   /**
    * The reference "MANZA TEXTILE MILLS" ledger's Office/Labour rows. Bal
-   * Advance = cumulative given - cumulative repaid (both already filtered to
-   * this period's month-end above) - this period's own repayment, which is
-   * only added separately while still a draft: once finalized, the finalize
-   * step has posted that exact amount as a 'repaid' transaction (usually
-   * dated within the period), so it's already inside advanceByEmployee's
-   * repaid total and must not be subtracted twice.
+   * Advance = cumulative given - cumulative deducted (both already filtered
+   * to this period's month-end above) - this period's own deduction, which
+   * is only added separately while still a draft: once finalized, the
+   * finalize step has posted that exact amount as a 'repaid'-type
+   * advance_transactions row (usually dated within the period) — "repaid" is
+   * only the internal/DB value, shown to users as a deduction — so it's
+   * already inside advanceByEmployee's deducted total and must not be
+   * subtracted twice.
    */
   const ledger = useMemo(() => {
     const withRow = rows.map(({ line, employee }) => {
@@ -413,7 +415,7 @@ export default function SalaryPage() {
           date: todayIso(),
           type: "repaid" as const,
           amount: l.advance_repayment,
-          notes: `Salary repayment — ${monthLabel(periodDate)}`,
+          notes: `Salary deduction — ${monthLabel(periodDate)}`,
         })),
       );
       if (repayError) {
@@ -504,7 +506,7 @@ export default function SalaryPage() {
                 {confirmingFinalize ? (
                   <>
                     <span className="text-[0.85rem] text-ink-soft">
-                      Locks the period and logs advance repayments — sure?
+                      Locks the period and logs advance deductions — sure?
                     </span>
                     <Button disabled={busy} onClick={() => setConfirmingFinalize(false)}>
                       Cancel
@@ -536,7 +538,7 @@ export default function SalaryPage() {
                     <th className="px-3 py-3 text-right font-medium">Short time</th>
                     <th className="px-3 py-3 text-right font-medium">Overtime</th>
                     <th className="px-3 py-3 text-right font-medium">Mess</th>
-                    <th className="px-3 py-3 text-right font-medium">Advance</th>
+                    <th className="px-3 py-3 text-right font-medium">Advance Deduction</th>
                     <th className="px-3 py-3 text-right font-medium">Net</th>
                     <th className="px-3 py-3 text-right font-medium">Final</th>
                     <th className="px-3 py-3 font-medium">Remarks</th>
@@ -650,6 +652,15 @@ export default function SalaryPage() {
                               patch(line.employee_id, "advance_repayment", numOrZero(e.target.value))
                             }
                           />
+                          {(() => {
+                            const adv = advanceByEmployee.get(employee.id);
+                            const balance = adv ? adv.given - adv.repaid : 0;
+                            return balance > 0 ? (
+                              <p className="mt-1 text-[0.72rem] text-ink-soft">
+                                Balance: {formatMoney(balance, "PKR")}
+                              </p>
+                            ) : null;
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-right font-medium text-ink">
                           {formatMoney(line.net_salary, "PKR")}

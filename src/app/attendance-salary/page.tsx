@@ -132,7 +132,7 @@ export default function AttendanceSalaryDashboard() {
               href="/attendance-salary/advances"
               icon={Wallet}
               title="Advances"
-              description="Log cash given and repaid, and see each employee's running balance."
+              description="Log cash given and deducted from salary, and see each employee's running balance."
             />
             <EntryCard
               href="/attendance-salary/salary"

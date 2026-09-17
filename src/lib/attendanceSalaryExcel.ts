@@ -388,7 +388,7 @@ export interface AdvanceTransactionRow {
   notes: string;
 }
 
-const BALANCE_HEADERS = ["Employee", "Given", "Repaid", "Balance"];
+const BALANCE_HEADERS = ["Employee", "Given", "Deducted", "Balance"];
 const TRANSACTION_HEADERS = ["Date", "Employee", "Type", "Amount", "Notes"];
 
 export function downloadAdvancesExcel(
@@ -422,7 +422,7 @@ export function downloadAdvancesExcel(
   for (const t of transactions) {
     put(r, 0, t.date, TEXT, "s");
     put(r, 1, t.employeeName, TEXT, "s");
-    put(r, 2, t.type === "given" ? "Given" : "Repaid", TEXT, "s");
+    put(r, 2, t.type === "given" ? "Given" : "Deducted", TEXT, "s");
     put(r, 3, round(t.amount), ST.value, "n");
     put(r, 4, t.notes || "—", TEXT, "s");
     r += 1;

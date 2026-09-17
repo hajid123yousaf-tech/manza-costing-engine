@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type {
   AnchorHTMLAttributes,
   ButtonHTMLAttributes,
   ReactNode,
 } from "react";
 import { ChevronRight, type LucideIcon } from "lucide-react";
+import { from12Hour, to12Hour } from "@/lib/attendanceSalary";
 
 export function cn(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -306,6 +308,108 @@ export function SuccessNote({ message }: { message: string }) {
   return (
     <div className="mb-4 rounded-xl border border-[#bbe7cf] bg-[#effaf3] px-4 py-3 text-[0.9rem] text-[#15803d]">
       {message}
+    </div>
+  );
+}
+
+/**
+ * 12-hour (AM/PM) time picker — a drop-in replacement for `<input type="time">`
+ * with the same "HH:MM" 24-hour string contract in/out. Native time inputs
+ * render in whatever 12/24-hour format the OS/browser locale picks, which a
+ * plain `<input type="time">` can't override; this always shows AM/PM.
+ * Uncontrolled-feeling but prop-driven: local hour/minute/ampm state re-syncs
+ * from `value` via effect (needed because the same row/instance gets new
+ * `value` props on reload — e.g. switching dates — without unmounting).
+ */
+export function TimePicker({
+  value,
+  onChange,
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const initial = to12Hour(value);
+  const [hour, setHour] = useState<number | null>(initial?.hour ?? null);
+  const [minute, setMinute] = useState<number | null>(initial?.minute ?? null);
+  const [ampm, setAmpm] = useState<"AM" | "PM">(initial?.ampm ?? "AM");
+
+  useEffect(() => {
+    void (async () => {
+      const parts = to12Hour(value);
+      setHour(parts?.hour ?? null);
+      setMinute(parts?.minute ?? null);
+      setAmpm(parts?.ampm ?? "AM");
+    })();
+  }, [value]);
+
+  function commit(h: number | null, m: number | null, ap: "AM" | "PM") {
+    setHour(h);
+    setMinute(m);
+    setAmpm(ap);
+    onChange(h !== null && m !== null ? from12Hour(h, m, ap) : "");
+  }
+
+  return (
+    <div
+      className={cn(
+        "field flex items-center gap-1 py-1",
+        disabled && "opacity-50",
+        className,
+      )}
+    >
+      <select
+        disabled={disabled}
+        aria-label="Hour"
+        className="min-w-0 flex-1 bg-transparent text-right focus:outline-none disabled:cursor-not-allowed"
+        value={hour ?? ""}
+        onChange={(e) =>
+          commit(e.target.value === "" ? null : Number(e.target.value), minute, ampm)
+        }
+      >
+        <option value="">--</option>
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+          <option key={h} value={h}>
+            {h}
+          </option>
+        ))}
+      </select>
+      <span className="text-ink-soft">:</span>
+      <select
+        disabled={disabled}
+        aria-label="Minute"
+        className="min-w-0 flex-1 bg-transparent focus:outline-none disabled:cursor-not-allowed"
+        value={minute ?? ""}
+        onChange={(e) =>
+          commit(hour, e.target.value === "" ? null : Number(e.target.value), ampm)
+        }
+      >
+        <option value="">--</option>
+        {Array.from({ length: 60 }, (_, i) => i).map((m) => (
+          <option key={m} value={m}>
+            {String(m).padStart(2, "0")}
+          </option>
+        ))}
+      </select>
+      <div className="ml-1 inline-flex shrink-0 overflow-hidden rounded-md border border-hairline">
+        {(["AM", "PM"] as const).map((ap) => (
+          <button
+            key={ap}
+            type="button"
+            disabled={disabled}
+            onClick={() => commit(hour, minute, ap)}
+            className={cn(
+              "px-1.5 py-0.5 text-[0.7rem] font-medium transition-colors disabled:cursor-not-allowed",
+              ampm === ap ? "bg-ink text-white" : "text-ink-soft hover:text-ink",
+            )}
+          >
+            {ap}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
