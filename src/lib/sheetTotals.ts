@@ -51,14 +51,23 @@ export async function loadSheetTotals(
       .from("cost_sheet_items")
       .select("id, cost_sheet_id, name, unit, rate, sort_order, varies_by_size")
       .in("cost_sheet_id", ids),
-    supabase.from("sizes").select("id, is_active").eq("is_active", true),
+    supabase
+      .from("sizes")
+      .select("id, cost_sheet_id")
+      .eq("is_active", true)
+      .in("cost_sheet_id", ids),
     supabase.from("exchange_rates").select("currency_code, rate_to_pkr"),
   ]);
 
   const components = rmRes.data ?? [];
   const fabricConsumption = consRes.data ?? [];
   const items = itemRes.data ?? [];
-  const activeSizeIds = (sizeRes.data ?? []).map((s) => s.id as string);
+  const activeSizeIdsBySheet = new Map<string, string[]>();
+  for (const s of sizeRes.data ?? []) {
+    const list = activeSizeIdsBySheet.get(s.cost_sheet_id as string) ?? [];
+    list.push(s.id as string);
+    activeSizeIdsBySheet.set(s.cost_sheet_id as string, list);
+  }
   const rates = (rateRes.data ?? []) as {
     currency_code: string;
     rate_to_pkr: number;
@@ -113,7 +122,7 @@ export async function loadSheetTotals(
 
     const rateToPkr = rateForCurrency(rates, sheet.display_currency);
 
-    const totals = activeSizeIds.map(
+    const totals = (activeSizeIdsBySheet.get(sheet.id) ?? []).map(
       (sizeId) =>
         computeSizeCost(sizeId, imported, local, sheetItems, rateToPkr).totalPkr,
     );

@@ -204,12 +204,16 @@ export default function CostSheetEditorPage() {
   const [items, setItems] = useState<ItemRow[]>([]);
 
   const load = useCallback(async () => {
+    const sizeQuery = isNew
+      ? Promise.resolve({ data: [] as Size[], error: null })
+      : supabase
+          .from("sizes")
+          .select("*")
+          .eq("cost_sheet_id", routeId)
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true });
     const [sizeRes, rateRes, prodRes, sheetsRes] = await Promise.all([
-      supabase
-        .from("sizes")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
+      sizeQuery,
       supabase.from("exchange_rates").select("currency_code, rate_to_pkr"),
       supabase
         .from("products")
@@ -478,12 +482,21 @@ export default function CostSheetEditorPage() {
   async function addSizeInline() {
     const name = newSizeName.trim();
     if (!name) return;
+    if (isNew) {
+      setError("Save the cost sheet first, then add sizes.");
+      return;
+    }
     setSavingSize(true);
     setError(null);
     const nextOrder = sizes.reduce((m, s) => Math.max(m, s.sort_order), 0) + 1;
     const { data, error } = await supabase
       .from("sizes")
-      .insert({ name, sort_order: nextOrder, is_active: true })
+      .insert({
+        name,
+        sort_order: nextOrder,
+        is_active: true,
+        cost_sheet_id: routeId,
+      })
       .select("*")
       .single();
     setSavingSize(false);
@@ -494,7 +507,7 @@ export default function CostSheetEditorPage() {
     setSizes((prev) => [...prev, data as Size]);
     setNewSizeName("");
     setAddingSize(false);
-    setNotice(`Added size "${name}". It is now available on every cost sheet.`);
+    setNotice(`Added size "${name}".`);
   }
 
   function startEditSize(s: Size) {
@@ -578,7 +591,7 @@ export default function CostSheetEditorPage() {
     setNotice(null);
     const { data, error } = await supabase
       .from("cost_sheet_items")
-      .select("name, unit, rate, sort_order")
+      .select("name, unit, rate, sort_order, varies_by_size")
       .eq("cost_sheet_id", loadFromSheetId)
       .order("sort_order", { ascending: true });
     setLoadingItems(false);
@@ -586,12 +599,17 @@ export default function CostSheetEditorPage() {
       setError(error.message);
       return;
     }
+    // A varies_by_size item's real values live in cost_sheet_item_size_rates,
+    // keyed to the SOURCE sheet's own sizes — those sizes don't exist on this
+    // sheet, so there's nothing valid to copy. Load it flat at 0 instead of
+    // silently carrying over a rate that never meant "the same for every size".
+    const variedCount = (data ?? []).filter((i) => i.varies_by_size).length;
     const rows = (data ?? []).map((i) => ({
       id: uid(),
       source_item_id: null,
       name: i.name as string,
       unit: i.unit as string,
-      rate: Number(i.rate),
+      rate: i.varies_by_size ? 0 : Number(i.rate),
       varies_by_size: false,
       sizeRates: {},
     }));
@@ -601,10 +619,13 @@ export default function CostSheetEditorPage() {
     }
     setItems((prev) => [...prev, ...rows]);
     const src = otherSheets.find((s) => s.id === loadFromSheetId);
+    const addedNote = `Added ${rows.length} item(s) from ${
+      src ? serial(src.serial_number) : "the selected sheet"
+    }.`;
     setNotice(
-      `Added ${rows.length} item(s) from ${
-        src ? serial(src.serial_number) : "the selected sheet"
-      }.`,
+      variedCount > 0
+        ? `${addedNote} ${variedCount} item(s) varied by size on the source sheet — loaded as flat rate, please re-enter.`
+        : addedNote,
     );
   }
 
@@ -1212,7 +1233,7 @@ export default function CostSheetEditorPage() {
       <Card className="mb-8 p-6 print-card">
         <SectionHeading
           title="Fabric consumption"
-          description="How much fabric each size uses, in each category's reference unit. Add or edit sizes from the column headers — changes apply to every cost sheet."
+          description="How much fabric each size uses, in each category's reference unit. Add or edit sizes from the column headers — sizes belong only to this cost sheet."
         />
 
         {editingSizeId ? (
@@ -1317,7 +1338,13 @@ export default function CostSheetEditorPage() {
                   ) : (
                     <button
                       onClick={() => setAddingSize(true)}
-                      className="min-h-[40px] rounded-lg border border-hairline px-2.5 py-1 text-[0.8rem] font-medium text-ink-soft hover:bg-surface md:min-h-0"
+                      disabled={isNew}
+                      title={
+                        isNew
+                          ? "Save the cost sheet first, then add sizes."
+                          : undefined
+                      }
+                      className="min-h-[40px] rounded-lg border border-hairline px-2.5 py-1 text-[0.8rem] font-medium text-ink-soft hover:bg-surface disabled:opacity-40 disabled:hover:bg-transparent md:min-h-0"
                     >
                       + Add size
                     </button>
@@ -1332,7 +1359,9 @@ export default function CostSheetEditorPage() {
                     colSpan={sizeColSpan}
                     className="border border-hairline px-3 py-6 text-center text-[0.9rem] text-ink-soft"
                   >
-                    Add a size to start entering consumption.
+                    {isNew
+                      ? "Save the cost sheet first, then add sizes to start entering consumption."
+                      : "Add a size to start entering consumption."}
                   </td>
                 </tr>
               ) : (
@@ -1371,10 +1400,10 @@ export default function CostSheetEditorPage() {
             </tbody>
           </table>
         </div>
-        {sizes.length === 0 ? (
+        {sizes.length === 0 && !isNew ? (
           <p className="mt-3 text-[0.82rem] text-ink-soft">
-            No sizes yet. Use “+ Add size” above to create one — it becomes a
-            column here and on every other cost sheet.
+            No sizes yet. Use “+ Add size” above to create one — it&apos;s
+            scoped to this cost sheet only.
           </p>
         ) : null}
       </Card>

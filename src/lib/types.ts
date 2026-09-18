@@ -34,6 +34,8 @@ export interface Size {
   sort_order: number;
   is_active: boolean;
   created_at: string;
+  /** Scopes this size to one cost sheet. Legacy rows with null are unused leftovers. */
+  cost_sheet_id: string | null;
 }
 
 export interface Product {
