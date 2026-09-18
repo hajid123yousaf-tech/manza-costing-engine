@@ -52,6 +52,9 @@ interface ItemRow {
   name: string;
   unit: string;
   rate: number;
+  varies_by_size: boolean;
+  /** sizeId -> rate, only meaningful when varies_by_size is true. Missing = 0. */
+  sizeRates: Record<string, number>;
 }
 
 interface SheetRef {
@@ -138,6 +141,8 @@ const defaultNewSheetItems = (): ItemRow[] =>
     name,
     unit: "per unit",
     rate: 0,
+    varies_by_size: false,
+    sizeRates: {},
   }));
 
 export default function CostSheetEditorPage() {
@@ -278,6 +283,20 @@ export default function CostSheetEditorPage() {
       return;
     }
 
+    const itemIds = (itemRes.data ?? []).map((i) => i.id as string);
+    const sizeRateRes = itemIds.length
+      ? await supabase
+          .from("cost_sheet_item_size_rates")
+          .select("cost_sheet_item_id, size_id, rate")
+          .in("cost_sheet_item_id", itemIds)
+      : { data: [] as { cost_sheet_item_id: string; size_id: string; rate: number }[] };
+    const sizeRatesByItem = new Map<string, Record<string, number>>();
+    for (const r of sizeRateRes.data ?? []) {
+      const map = sizeRatesByItem.get(r.cost_sheet_item_id) ?? {};
+      map[r.size_id] = Number(r.rate);
+      sizeRatesByItem.set(r.cost_sheet_item_id, map);
+    }
+
     const sheet = sheetRes.data;
     setSerialNumber(sheet.serial_number);
     setCreatedAt(sheet.created_at ?? null);
@@ -317,6 +336,8 @@ export default function CostSheetEditorPage() {
         name: i.name,
         unit: i.unit,
         rate: Number(i.rate),
+        varies_by_size: Boolean(i.varies_by_size),
+        sizeRates: sizeRatesByItem.get(i.id) ?? {},
       })),
     );
 
@@ -360,6 +381,8 @@ export default function CostSheetEditorPage() {
       unit: it.unit,
       rate: it.rate,
       sort_order: index,
+      variesBySize: it.varies_by_size,
+      sizeRates: it.sizeRates,
     }));
     return sizes.map((s) =>
       computeSizeCost(
@@ -537,6 +560,8 @@ export default function CostSheetEditorPage() {
       name: f.label,
       unit: "per unit",
       rate: Number(p[f.key]) || 0,
+      varies_by_size: false,
+      sizeRates: {},
     }));
     setItems((prev) => [...prev, ...additions]);
     setError(null);
@@ -567,6 +592,8 @@ export default function CostSheetEditorPage() {
       name: i.name as string,
       unit: i.unit as string,
       rate: Number(i.rate),
+      varies_by_size: false,
+      sizeRates: {},
     }));
     if (rows.length === 0) {
       setNotice("That cost sheet has no value-add items to copy.");
@@ -584,7 +611,15 @@ export default function CostSheetEditorPage() {
   function addItemRow() {
     setItems((prev) => [
       ...prev,
-      { id: uid(), source_item_id: null, name: "", unit: "per unit", rate: 0 },
+      {
+        id: uid(),
+        source_item_id: null,
+        name: "",
+        unit: "per unit",
+        rate: 0,
+        varies_by_size: false,
+        sizeRates: {},
+      },
     ]);
   }
   function updateItem(
@@ -598,6 +633,39 @@ export default function CostSheetEditorPage() {
   }
   function removeItem(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id));
+  }
+  function toggleItemVariesBySize(id: string) {
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === id ? { ...i, varies_by_size: !i.varies_by_size } : i,
+      ),
+    );
+  }
+  function setItemSizeRate(id: string, sizeId: string, value: number) {
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === id
+          ? { ...i, sizeRates: { ...i.sizeRates, [sizeId]: value } }
+          : i,
+      ),
+    );
+  }
+  /** Copies one size's rate for an item into another size, or into every other active size. */
+  function copyItemSizeRate(id: string, fromSizeId: string, toSizeId: "all" | string) {
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.id !== id) return i;
+        const fromValue = i.sizeRates[fromSizeId] ?? 0;
+        if (toSizeId === "all") {
+          const next = { ...i.sizeRates };
+          for (const s of sizes) {
+            if (s.id !== fromSizeId) next[s.id] = fromValue;
+          }
+          return { ...i, sizeRates: next };
+        }
+        return { ...i, sizeRates: { ...i.sizeRates, [toSizeId]: fromValue } };
+      }),
+    );
   }
   function moveItem(index: number, dir: -1 | 1) {
     setItems((prev) => {
@@ -671,19 +739,43 @@ export default function CostSheetEditorPage() {
       if (error) throw error;
     }
 
-    const itemRows = items
-      .filter((i) => i.name.trim() !== "" || i.rate !== 0)
-      .map((i, index) => ({
-        id: i.id,
-        cost_sheet_id: sheetId,
-        source_item_id: i.source_item_id,
-        name: i.name.trim() || "Untitled item",
-        unit: i.unit.trim() || "per unit",
-        rate: i.rate || 0,
-        sort_order: index,
-      }));
+    const keptItems = items.filter(
+      (i) =>
+        i.name.trim() !== "" ||
+        i.rate !== 0 ||
+        (i.varies_by_size &&
+          Object.values(i.sizeRates).some((v) => v !== 0)),
+    );
+    const itemRows = keptItems.map((i, index) => ({
+      id: i.id,
+      cost_sheet_id: sheetId,
+      source_item_id: i.source_item_id,
+      name: i.name.trim() || "Untitled item",
+      unit: i.unit.trim() || "per unit",
+      rate: i.rate || 0,
+      sort_order: index,
+      varies_by_size: i.varies_by_size,
+    }));
     if (itemRows.length) {
       const { error } = await supabase.from("cost_sheet_items").insert(itemRows);
+      if (error) throw error;
+    }
+
+    const sizeRateRows = keptItems
+      .filter((i) => i.varies_by_size)
+      .flatMap((i) =>
+        Array.from(sizeIds)
+          .filter((sizeId) => (i.sizeRates[sizeId] ?? 0) !== 0)
+          .map((sizeId) => ({
+            cost_sheet_item_id: i.id,
+            size_id: sizeId,
+            rate: i.sizeRates[sizeId] ?? 0,
+          })),
+      );
+    if (sizeRateRows.length) {
+      const { error } = await supabase
+        .from("cost_sheet_item_size_rates")
+        .insert(sizeRateRows);
       if (error) throw error;
     }
   }
@@ -1413,6 +1505,9 @@ export default function CostSheetEditorPage() {
                   <th className="py-2 pr-2 font-medium print:hidden">Order</th>
                   <th className="py-2 pr-3 font-medium">Name</th>
                   <th className="py-2 pr-3 font-medium">Unit</th>
+                  <th className="py-2 pr-3 font-medium print:hidden">
+                    Varies by size?
+                  </th>
                   <th className="py-2 pr-3 text-right font-medium">Rate</th>
                   <th className="py-2 pr-3 font-medium">Source</th>
                   <th className="py-2 print:hidden" />
@@ -1474,17 +1569,75 @@ export default function CostSheetEditorPage() {
                         ) : null}
                       </select>
                     </td>
+                    <td className="py-2 pr-3 print:hidden">
+                      <label className="flex min-h-[40px] items-center gap-1.5 text-[0.82rem] text-ink-soft md:min-h-0">
+                        <input
+                          type="checkbox"
+                          checked={it.varies_by_size}
+                          onChange={() => toggleItemVariesBySize(it.id)}
+                        />
+                        Per size
+                      </label>
+                    </td>
                     <td className="py-2 pr-3">
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="field max-w-[8rem] text-right"
-                        value={editValue(it.rate)}
-                        placeholder="0"
-                        onChange={(e) =>
-                          updateItem(it.id, "rate", numOrZero(e.target.value))
-                        }
-                      />
+                      {!it.varies_by_size ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="field max-w-[8rem] text-right"
+                          value={editValue(it.rate)}
+                          placeholder="0"
+                          onChange={(e) =>
+                            updateItem(it.id, "rate", numOrZero(e.target.value))
+                          }
+                        />
+                      ) : (
+                        <div className="flex min-w-[240px] flex-col gap-1.5">
+                          {sizes.map((s) => (
+                            <div key={s.id} className="flex items-center gap-1.5">
+                              <span
+                                className="w-16 shrink-0 truncate text-[0.72rem] text-ink-soft"
+                                title={s.name}
+                              >
+                                {s.name}
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                className="field max-w-[6rem] text-right"
+                                value={editValue(it.sizeRates[s.id] ?? 0)}
+                                placeholder="0"
+                                onChange={(e) =>
+                                  setItemSizeRate(
+                                    it.id,
+                                    s.id,
+                                    numOrZero(e.target.value),
+                                  )
+                                }
+                              />
+                              <select
+                                className="field max-w-[8rem] text-[0.72rem] print:hidden"
+                                value=""
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (v) copyItemSizeRate(it.id, s.id, v);
+                                  e.target.value = "";
+                                }}
+                              >
+                                <option value="">Copy to…</option>
+                                <option value="all">All other sizes</option>
+                                {sizes
+                                  .filter((o) => o.id !== s.id)
+                                  .map((o) => (
+                                    <option key={o.id} value={o.id}>
+                                      {o.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3 text-[0.82rem] text-ink-soft">
                       {it.source_item_id ? "Product" : "One-off"}
@@ -1598,7 +1751,9 @@ export default function CostSheetEditorPage() {
                       <td className="py-1.5 pr-3 text-ink-soft">
                         {(it.name || "Untitled item") +
                           (isPercentUnit(it.unit)
-                            ? ` (${formatNumber(it.rate, 2)}%)`
+                            ? it.varies_by_size
+                              ? " (% varies by size)"
+                              : ` (${formatNumber(it.rate, 2)}%)`
                             : "")}
                       </td>
                       {sizeCosts.map((sc) => (

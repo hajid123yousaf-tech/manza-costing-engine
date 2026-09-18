@@ -137,7 +137,7 @@ export function buildLedger(input: LedgerInput): LedgerData {
       name: (it.name || "Untitled").toUpperCase(),
       value: isPercentUnit(it.unit)
         ? sc.itemContributions[idx]?.amount ?? 0
-        : it.rate,
+        : sc.itemContributions[idx]?.rate ?? it.rate,
     }));
 
     return {

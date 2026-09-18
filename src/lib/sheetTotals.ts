@@ -49,7 +49,7 @@ export async function loadSheetTotals(
       .in("cost_sheet_id", ids),
     supabase
       .from("cost_sheet_items")
-      .select("id, cost_sheet_id, name, unit, rate, sort_order")
+      .select("id, cost_sheet_id, name, unit, rate, sort_order, varies_by_size")
       .in("cost_sheet_id", ids),
     supabase.from("sizes").select("id, is_active").eq("is_active", true),
     supabase.from("exchange_rates").select("currency_code, rate_to_pkr"),
@@ -63,6 +63,22 @@ export async function loadSheetTotals(
     currency_code: string;
     rate_to_pkr: number;
   }[];
+
+  const variesItemIds = items
+    .filter((i) => i.varies_by_size)
+    .map((i) => i.id as string);
+  const sizeRateRes = variesItemIds.length
+    ? await supabase
+        .from("cost_sheet_item_size_rates")
+        .select("cost_sheet_item_id, size_id, rate")
+        .in("cost_sheet_item_id", variesItemIds)
+    : { data: [] as { cost_sheet_item_id: string; size_id: string; rate: number }[] };
+  const sizeRatesByItem = new Map<string, Record<string, number>>();
+  for (const r of sizeRateRes.data ?? []) {
+    const map = sizeRatesByItem.get(r.cost_sheet_item_id as string) ?? {};
+    map[r.size_id as string] = Number(r.rate);
+    sizeRatesByItem.set(r.cost_sheet_item_id as string, map);
+  }
 
   for (const sheet of sheets) {
     const category = (type: FabricType): FabricCategoryCost => {
@@ -91,6 +107,8 @@ export async function loadSheetTotals(
         unit: i.unit as string,
         rate: Number(i.rate),
         sort_order: Number(i.sort_order),
+        variesBySize: Boolean(i.varies_by_size),
+        sizeRates: sizeRatesByItem.get(i.id as string) ?? {},
       }));
 
     const rateToPkr = rateForCurrency(rates, sheet.display_currency);

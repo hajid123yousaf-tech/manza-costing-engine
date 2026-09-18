@@ -76,17 +76,57 @@ export async function duplicateSheet(sourceId: string): Promise<string> {
     if (error) throw error;
   }
 
-  const itemRows = (itemRes.data ?? []).map((i, index) => ({
+  const sourceItems = itemRes.data ?? [];
+  const itemRows = sourceItems.map((i, index) => ({
     cost_sheet_id: newId,
     source_item_id: i.source_item_id,
     name: i.name,
     unit: i.unit,
     rate: i.rate,
     sort_order: i.sort_order ?? index,
+    varies_by_size: i.varies_by_size ?? false,
   }));
   if (itemRows.length) {
-    const { error } = await supabase.from("cost_sheet_items").insert(itemRows);
+    const { data: insertedItems, error } = await supabase
+      .from("cost_sheet_items")
+      .insert(itemRows)
+      .select("id");
     if (error) throw error;
+
+    const variesIds = sourceItems
+      .filter((i) => i.varies_by_size)
+      .map((i) => i.id as string);
+    if (variesIds.length && insertedItems) {
+      const { data: sizeRates, error: sizeRateErr } = await supabase
+        .from("cost_sheet_item_size_rates")
+        .select("cost_sheet_item_id, size_id, rate")
+        .in("cost_sheet_item_id", variesIds);
+      if (sizeRateErr) throw sizeRateErr;
+
+      // Rows come back in insertion order, so index i lines up 1:1 with
+      // sourceItems[i] — build the old-id -> new-id map from that pairing.
+      const oldToNewId = new Map<string, string>();
+      sourceItems.forEach((src, i) => {
+        oldToNewId.set(src.id as string, insertedItems[i].id as string);
+      });
+
+      const sizeRateRows = (sizeRates ?? [])
+        .map((r) => ({
+          cost_sheet_item_id: oldToNewId.get(r.cost_sheet_item_id as string),
+          size_id: r.size_id,
+          rate: r.rate,
+        }))
+        .filter(
+          (r): r is { cost_sheet_item_id: string; size_id: string; rate: number } =>
+            Boolean(r.cost_sheet_item_id),
+        );
+      if (sizeRateRows.length) {
+        const { error: insErr } = await supabase
+          .from("cost_sheet_item_size_rates")
+          .insert(sizeRateRows);
+        if (insErr) throw insErr;
+      }
+    }
   }
 
   return newId;

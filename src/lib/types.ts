@@ -105,6 +105,16 @@ export interface CostSheetItem {
   unit: string;
   rate: number;
   sort_order: number;
+  /** When true, this item's rate differs per size — see CostSheetItemSizeRate. */
+  varies_by_size: boolean;
+}
+
+/** One (item, size) rate override, used only when the item's varies_by_size is true. */
+export interface CostSheetItemSizeRate {
+  id: string;
+  cost_sheet_item_id: string;
+  size_id: string;
+  rate: number;
 }
 
 /* ---------- Attendance & Salary ---------- */

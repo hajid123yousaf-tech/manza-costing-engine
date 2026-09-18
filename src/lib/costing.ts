@@ -7,6 +7,15 @@ export interface CalcItem {
   unit: string;
   rate: number;
   sort_order: number;
+  /** When true, use `sizeRates[sizeId]` (default 0) instead of the flat `rate`. */
+  variesBySize?: boolean;
+  sizeRates?: Record<string, number>;
+}
+
+/** The rate an item contributes for a specific size, honoring variesBySize. */
+export function rateForSize(item: CalcItem, sizeId: string): number {
+  if (!item.variesBySize) return item.rate;
+  return item.sizeRates?.[sizeId] ?? 0;
 }
 
 /**
@@ -82,11 +91,10 @@ export function computeSizeCost(
   const ordered = [...items].sort((a, b) => a.sort_order - b.sort_order);
   let running = materialCost;
   const itemContributions: ItemContribution[] = ordered.map((it) => {
-    const amount = isPercentUnit(it.unit)
-      ? (it.rate / 100) * running
-      : it.rate;
+    const rate = rateForSize(it, sizeId);
+    const amount = isPercentUnit(it.unit) ? (rate / 100) * running : rate;
     running += amount;
-    return { id: it.id, name: it.name, unit: it.unit, rate: it.rate, amount };
+    return { id: it.id, name: it.name, unit: it.unit, rate, amount };
   });
 
   const totalPkr = running;
