@@ -1,4 +1,12 @@
-import type { AdvanceTransaction, AttendanceRecord, Employee } from "./types";
+import { supabase } from "./supabase";
+import {
+  DEFAULT_COMPANY_POLICY,
+  type AdvanceTransaction,
+  type AttendanceRecord,
+  type AttendanceStatus,
+  type CompanyPolicy,
+  type Employee,
+} from "./types";
 
 /** Round to 2dp, avoiding float noise (e.g. 12.000000000000002). */
 export function round2(n: number): number {
@@ -106,12 +114,141 @@ export function formatTime12(t: string | null | undefined): string {
   return `${parts.hour}:${String(parts.minute).padStart(2, "0")} ${parts.ampm}`;
 }
 
-export function shiftHours(
+/** "YYYY-MM-DD" -> true for Sunday, built from date parts (no UTC-parse off-by-one). */
+export function isSundayIso(iso: string): boolean {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay() === 0;
+}
+
+/**
+ * Fetches the single company_policy row (id = 1), falling back to
+ * DEFAULT_COMPANY_POLICY if the row is missing or the query fails.
+ */
+export async function fetchCompanyPolicy(): Promise<{
+  policy: CompanyPolicy;
+  error: string | null;
+}> {
+  const { data, error } = await supabase
+    .from("company_policy")
+    .select("*")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) return { policy: DEFAULT_COMPANY_POLICY, error: error.message };
+  return { policy: (data as CompanyPolicy | null) ?? DEFAULT_COMPANY_POLICY, error: null };
+}
+
+/**
+ * Effective shift for an employee: their own override if set, otherwise the
+ * company policy shift. Only used for lateness/early-leave detection — the
+ * hourly rate is derived from the policy's standard_hours/days_basis instead.
+ */
+export function effectiveShiftMinutes(
   employee: Pick<Employee, "shift_start" | "shift_end">,
+  policy: Pick<CompanyPolicy, "shift_start" | "shift_end">,
+): { startMin: number; endMin: number } {
+  const startMin = timeToMinutes(employee.shift_start) ?? timeToMinutes(policy.shift_start) ?? 0;
+  const endMin = timeToMinutes(employee.shift_end) ?? timeToMinutes(policy.shift_end) ?? 0;
+  return { startMin, endMin };
+}
+
+/** Hourly rate = monthly_salary / days_basis / standard_hours (daily_wage / standard_hours for daily wage). */
+export function getHourlyRate(
+  employee: Pick<Employee, "pay_type" | "monthly_salary" | "daily_wage">,
+  policy: Pick<CompanyPolicy, "standard_hours" | "days_basis">,
 ): number {
-  const start = timeToMinutes(employee.shift_start) ?? 0;
-  const end = timeToMinutes(employee.shift_end) ?? 0;
-  return Math.max(0, end - start) / 60;
+  const standardHours = Number(policy.standard_hours) || 0;
+  if (standardHours <= 0) return 0;
+  if (employee.pay_type === "daily") {
+    return (Number(employee.daily_wage) || 0) / standardHours;
+  }
+  const daysBasis = Number(policy.days_basis) || 0;
+  if (daysBasis <= 0) return 0;
+  return (Number(employee.monthly_salary) || 0) / daysBasis / standardHours;
+}
+
+/** One full day's pay at the policy's days_basis rate — used for the "extra_day" Sunday mode. */
+function getPolicyDailyRate(
+  employee: Pick<Employee, "pay_type" | "monthly_salary" | "daily_wage">,
+  policy: Pick<CompanyPolicy, "standard_hours" | "days_basis">,
+): number {
+  if (employee.pay_type === "daily") return Number(employee.daily_wage) || 0;
+  return getHourlyRate(employee, policy) * (Number(policy.standard_hours) || 0);
+}
+
+export interface DayFlags {
+  isSunday: boolean;
+  /** max(0, check_in - effective shift start - grace_minutes). */
+  lateMinutes: number;
+  /** max(0, effective shift end - check_out). */
+  earlyLeaveMinutes: number;
+  /** lateMinutes + earlyLeaveMinutes, before the undertime tolerance is applied. */
+  shortfallMinutes: number;
+  /** shortfallMinutes after applying the policy's undertime_mode/tolerance. */
+  countedShortfallMinutes: number;
+  /** max(0, worked_minutes - overtime_threshold_hours*60); 0 unless both check_in/out exist and status is present/half_day. */
+  overtimeMinutes: number;
+  workedMinutes: number | null;
+}
+
+const blankDayFlags = (isSunday: boolean): DayFlags => ({
+  isSunday,
+  lateMinutes: 0,
+  earlyLeaveMinutes: 0,
+  shortfallMinutes: 0,
+  countedShortfallMinutes: 0,
+  overtimeMinutes: 0,
+  workedMinutes: null,
+});
+
+/**
+ * One day's lateness/early-leave/overtime flags for a tracked, non-Sunday
+ * employee day — the shared basis for both the Attendance daily view's
+ * per-row flags and computeMonthlyAttendanceStats, so the two never drift.
+ * Returns all-zero flags for Sundays or when time tracking is disabled.
+ */
+export function computeDayFlags(
+  employee: Pick<Employee, "shift_start" | "shift_end" | "time_tracking_enabled" | "grace_minutes">,
+  policy: CompanyPolicy,
+  date: string,
+  record: Pick<AttendanceRecord, "status" | "check_in" | "check_out"> | null | undefined,
+): DayFlags {
+  const isSunday = isSundayIso(date);
+  if (!record || isSunday || !employee.time_tracking_enabled) return blankDayFlags(isSunday);
+
+  const { startMin, endMin } = effectiveShiftMinutes(employee, policy);
+  const grace = Number(employee.grace_minutes) || 0;
+  const ci = timeToMinutes(record.check_in);
+  const co = timeToMinutes(record.check_out);
+
+  const lateMinutes = ci !== null ? Math.max(0, ci - startMin - grace) : 0;
+  const earlyLeaveMinutes = co !== null ? Math.max(0, endMin - co) : 0;
+  const shortfallMinutes = lateMinutes + earlyLeaveMinutes;
+  const tolerance = Number(policy.undertime_tolerance_minutes) || 0;
+  const countedShortfallMinutes =
+    policy.undertime_mode === "excess_only"
+      ? Math.max(0, shortfallMinutes - tolerance)
+      : shortfallMinutes <= tolerance
+        ? 0
+        : shortfallMinutes;
+
+  let workedMinutes: number | null = null;
+  let overtimeMinutes = 0;
+  const statusNeedsTime: AttendanceStatus[] = ["present", "half_day"];
+  if (ci !== null && co !== null && statusNeedsTime.includes(record.status)) {
+    workedMinutes = co - ci;
+    const otThresholdMin = (Number(policy.overtime_threshold_hours) || 0) * 60;
+    overtimeMinutes = Math.max(0, workedMinutes - otThresholdMin);
+  }
+
+  return {
+    isSunday,
+    lateMinutes,
+    earlyLeaveMinutes,
+    shortfallMinutes,
+    countedShortfallMinutes,
+    overtimeMinutes,
+    workedMinutes,
+  };
 }
 
 /** Running balance for one employee: sum(given) - sum(repaid). */
@@ -184,10 +321,12 @@ export interface MonthlyAttendanceStats {
   absent: number;
   leave: number;
   halfDay: number;
-  /** Summed per day as max(0, (check_in - shift_start) - grace_minutes) — grace applies daily, not once a month. */
+  /** Summed per day via computeDayFlags — grace and tolerance apply daily, not once a month. */
   lateMinutes: number;
+  /** Weekday overtime minutes plus Sunday-overtime minutes (modes hourly_ot/beyond_threshold only). */
   overtimeMinutes: number;
   shortTimeAmount: number;
+  /** Weekday overtime amount plus Sunday-overtime amount (all three sunday_mode variants). */
   overtimeAmount: number;
 }
 
@@ -205,44 +344,73 @@ const blankStats = (): MonthlyAttendanceStats => ({
 /**
  * One employee's attendance-derived stats for a period month — the shared
  * basis for both salary generation and the Monthly Summary report, so the
- * two figures never drift apart. Late/overtime minutes and their amounts are
- * only computed when the employee has time tracking enabled; otherwise those
- * fields stay 0 (attendance counts themselves are unaffected by the flag).
+ * two figures never drift apart.
+ *
+ * Present/absent/leave/half-day counts come straight from attendance
+ * records, except that on a Sunday (when the policy's sunday_paid_leave is
+ * true) an absent/leave record is never counted — Sunday is a paid day off.
+ * Late/short-time/weekday-overtime are computed per day via computeDayFlags
+ * (which already excludes Sundays and untracked employees). Sunday overtime
+ * is computed separately below, independent of time_tracking_enabled, for
+ * employees with sunday_overtime = true.
  */
 export function computeMonthlyAttendanceStats(
   employee: Employee,
+  policy: CompanyPolicy,
   period: string,
   records: AttendanceRecord[],
 ): MonthlyAttendanceStats {
   const stats = blankStats();
-  stats.present = records.filter((r) => r.status === "present").length;
-  stats.halfDay = records.filter((r) => r.status === "half_day").length;
-  stats.absent = records.filter((r) => r.status === "absent").length;
-  stats.leave = records.filter((r) => r.status === "leave").length;
-
-  if (!employee.time_tracking_enabled) return stats;
-
-  const hours = shiftHours(employee);
-  const shiftStartMin = timeToMinutes(employee.shift_start) ?? 0;
-  const shiftEndMin = timeToMinutes(employee.shift_end) ?? 0;
-  const grace = Number(employee.grace_minutes) || 0;
 
   for (const r of records) {
-    const ci = timeToMinutes(r.check_in);
-    if (ci !== null) stats.lateMinutes += Math.max(0, ci - shiftStartMin - grace);
-    const co = timeToMinutes(r.check_out);
-    if (co !== null) stats.overtimeMinutes += Math.max(0, co - shiftEndMin);
+    const sunday = isSundayIso(r.date);
+    if (sunday && policy.sunday_paid_leave) {
+      if (r.status === "present") stats.present += 1;
+      else if (r.status === "half_day") stats.halfDay += 1;
+      continue;
+    }
+    if (r.status === "present") stats.present += 1;
+    else if (r.status === "half_day") stats.halfDay += 1;
+    else if (r.status === "absent") stats.absent += 1;
+    else if (r.status === "leave") stats.leave += 1;
   }
 
-  const isMonthly = employee.pay_type === "monthly";
-  const monthlySalary = Number(employee.monthly_salary) || 0;
-  const dailyWage = Number(employee.daily_wage) || 0;
-  const dim = daysInMonth(period);
-  const basis = isMonthly ? monthlySalary : dailyWage * dim;
-  const perMinuteRate = hours > 0 ? basis / (30 * hours * 60) : 0;
-  stats.shortTimeAmount = round2(stats.lateMinutes * perMinuteRate);
-  stats.overtimeAmount = round2(stats.overtimeMinutes * perMinuteRate);
+  const hourlyRate = getHourlyRate(employee, policy);
+  const multiplier = Number(policy.overtime_multiplier) || 0;
 
+  for (const r of records) {
+    if (isSundayIso(r.date)) continue;
+    const flags = computeDayFlags(employee, policy, r.date, r);
+    stats.lateMinutes += flags.lateMinutes;
+    stats.shortTimeAmount += (flags.countedShortfallMinutes / 60) * hourlyRate;
+    stats.overtimeMinutes += flags.overtimeMinutes;
+    stats.overtimeAmount += (flags.overtimeMinutes / 60) * hourlyRate * multiplier;
+  }
+
+  if (employee.sunday_overtime) {
+    const otThresholdMin = (Number(policy.overtime_threshold_hours) || 0) * 60;
+    for (const r of records) {
+      if (!isSundayIso(r.date)) continue;
+      const ci = timeToMinutes(r.check_in);
+      const co = timeToMinutes(r.check_out);
+      if (ci === null || co === null) continue;
+      const workedMinutes = Math.max(0, co - ci);
+
+      if (policy.sunday_mode === "hourly_ot") {
+        stats.overtimeMinutes += workedMinutes;
+        stats.overtimeAmount += (workedMinutes / 60) * hourlyRate * multiplier;
+      } else if (policy.sunday_mode === "extra_day") {
+        stats.overtimeAmount += getPolicyDailyRate(employee, policy);
+      } else {
+        const excess = Math.max(0, workedMinutes - otThresholdMin);
+        stats.overtimeMinutes += excess;
+        stats.overtimeAmount += (excess / 60) * hourlyRate * multiplier;
+      }
+    }
+  }
+
+  stats.shortTimeAmount = round2(stats.shortTimeAmount);
+  stats.overtimeAmount = round2(stats.overtimeAmount);
   return stats;
 }
 
@@ -263,12 +431,13 @@ export interface GeneratedSalaryLine extends EditableSalaryFields {
  */
 export function generateSalaryLine(
   employee: Employee,
+  policy: CompanyPolicy,
   period: string,
   records: AttendanceRecord[],
 ): GeneratedSalaryLine {
   const isMonthly = employee.pay_type === "monthly";
   const dim = daysInMonth(period);
-  const stats = computeMonthlyAttendanceStats(employee, period, records);
+  const stats = computeMonthlyAttendanceStats(employee, policy, period, records);
 
   const monthlySalary = Number(employee.monthly_salary) || 0;
   const dailyWage = Number(employee.daily_wage) || 0;

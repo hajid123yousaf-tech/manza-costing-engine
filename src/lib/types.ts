@@ -137,13 +137,15 @@ export interface Employee {
   monthly_salary: number | null;
   daily_wage: number | null;
   staff_category: StaffCategory;
-  /** "HH:MM:SS" */
-  shift_start: string;
-  /** "HH:MM:SS" */
-  shift_end: string;
+  /** "HH:MM:SS", or null to use the company policy shift. */
+  shift_start: string | null;
+  /** "HH:MM:SS", or null to use the company policy shift. */
+  shift_end: string | null;
   time_tracking_enabled: boolean;
   /** Daily grace period, in minutes, before a late check-in counts toward short-time deduction. */
   grace_minutes: number;
+  /** Whether Sunday work counts as overtime for this employee. */
+  sunday_overtime: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -225,11 +227,58 @@ export const ADVANCE_TYPES: { value: AdvanceType; label: string }[] = [
   { value: "repaid", label: "Deducted" },
 ];
 
-/** Default shift times per staff category — editable per employee. */
-export const DEFAULT_SHIFT_TIMES: Record<
-  StaffCategory,
-  { start: string; end: string }
-> = {
-  office: { start: "08:30", end: "18:00" },
-  labour: { start: "08:00", end: "18:00" },
+/* ---------- Company duty time policy ---------- */
+
+export type UndertimeMode = "ignore_if_within" | "excess_only";
+export type SundayMode = "hourly_ot" | "extra_day" | "beyond_threshold";
+
+/** Single-row table (id = 1) holding the company-wide duty time rules. */
+export interface CompanyPolicy {
+  id: number;
+  /** "HH:MM:SS" */
+  shift_start: string;
+  /** "HH:MM:SS" */
+  shift_end: string;
+  standard_hours: number;
+  overtime_threshold_hours: number;
+  overtime_multiplier: number;
+  undertime_tolerance_minutes: number;
+  undertime_mode: UndertimeMode;
+  sunday_paid_leave: boolean;
+  sunday_mode: SundayMode;
+  days_basis: number;
+  updated_at: string;
+}
+
+/** Used when the company_policy row (id = 1) is missing. */
+export const DEFAULT_COMPANY_POLICY: CompanyPolicy = {
+  id: 1,
+  shift_start: "08:00:00",
+  shift_end: "17:00:00",
+  standard_hours: 9,
+  overtime_threshold_hours: 9,
+  overtime_multiplier: 1.5,
+  undertime_tolerance_minutes: 30,
+  undertime_mode: "ignore_if_within",
+  sunday_paid_leave: true,
+  sunday_mode: "hourly_ot",
+  days_basis: 30,
+  updated_at: "",
 };
+
+export const UNDERTIME_MODES: { value: UndertimeMode; label: string }[] = [
+  {
+    value: "ignore_if_within",
+    label: "Ignore if within tolerance, deduct full shortfall if exceeded",
+  },
+  {
+    value: "excess_only",
+    label: "Ignore the first N minutes, deduct only the excess",
+  },
+];
+
+export const SUNDAY_MODES: { value: SundayMode; label: string }[] = [
+  { value: "hourly_ot", label: "All Sunday hours as overtime" },
+  { value: "extra_day", label: "One extra day at daily rate" },
+  { value: "beyond_threshold", label: "Only hours beyond the threshold as overtime" },
+];

@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { todayIso } from "@/lib/attendanceSalary";
 import { formatMoney } from "@/lib/format";
 import type { AdvanceTransaction, AttendanceRecord } from "@/lib/types";
+import { CompanyPolicyCard } from "@/components/CompanyPolicyCard";
 import {
   Card,
   EntryCard,
@@ -113,6 +114,10 @@ export default function AttendanceSalaryDashboard() {
               label="Advance balance"
               value={formatMoney(kpis.advanceBalance, "PKR")}
             />
+          </div>
+
+          <div className="mt-8">
+            <CompanyPolicyCard />
           </div>
 
           <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2">

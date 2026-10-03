@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   compactPrintFontSize,
+  computeDayFlags,
   computeMonthlyAttendanceStats,
   currentMonthInput,
   dateLabel,
+  fetchCompanyPolicy,
   formatTime12,
   fromTimeInputValue,
+  isSundayIso,
   monthInputToPeriod,
   monthLabel,
   monthRange,
@@ -22,9 +25,11 @@ import { downloadAttendanceExcel, downloadMonthlySummaryExcel } from "@/lib/atte
 import { formatNumber, formatMoney } from "@/lib/format";
 import {
   ATTENDANCE_STATUSES,
+  DEFAULT_COMPANY_POLICY,
   SHIFTS,
   type AttendanceRecord,
   type AttendanceStatus,
+  type CompanyPolicy,
   type Employee,
   type Shift,
 } from "@/lib/types";
@@ -33,6 +38,7 @@ import {
   Card,
   ErrorNote,
   PageHeader,
+  Pill,
   Spinner,
   SuccessNote,
   TimePicker,
@@ -80,6 +86,14 @@ export default function AttendancePage() {
   const [summaryRows, setSummaryRows] = useState<
     { employee: Employee; row: MonthlySummaryRow }[]
   >([]);
+  const [policy, setPolicy] = useState<CompanyPolicy>(DEFAULT_COMPANY_POLICY);
+
+  useEffect(() => {
+    void (async () => {
+      const { policy: p } = await fetchCompanyPolicy();
+      setPolicy(p);
+    })();
+  }, []);
 
   const load = useCallback(async (forDate: string) => {
     setLoading(true);
@@ -127,7 +141,7 @@ export default function AttendancePage() {
     })();
   }, [date, load]);
 
-  const loadSummary = useCallback(async (monthInput: string) => {
+  const loadSummary = useCallback(async (monthInput: string, forPolicy: CompanyPolicy) => {
     setSummaryLoading(true);
     setError(null);
     const period = monthInputToPeriod(monthInput);
@@ -157,6 +171,7 @@ export default function AttendancePage() {
       emps.map((employee) => {
         const stats = computeMonthlyAttendanceStats(
           employee,
+          forPolicy,
           period,
           recordsByEmployee.get(employee.id) ?? [],
         );
@@ -172,9 +187,9 @@ export default function AttendancePage() {
   useEffect(() => {
     if (view !== "summary") return;
     void (async () => {
-      await loadSummary(summaryMonth);
+      await loadSummary(summaryMonth, policy);
     })();
-  }, [view, summaryMonth, loadSummary]);
+  }, [view, summaryMonth, policy, loadSummary]);
 
   const summary = useMemo(() => {
     const withCategory = summaryRows.map(({ employee, row }) => ({
@@ -333,6 +348,13 @@ export default function AttendancePage() {
       {error ? <ErrorNote message={error} /> : null}
       {success ? <SuccessNote message={success} /> : null}
 
+      {view === "daily" && isSundayIso(date) && policy.sunday_paid_leave ? (
+        <div className="mb-4 rounded-xl border border-hairline bg-canvas px-4 py-3 text-[0.9rem] text-ink-soft">
+          <Pill tone="mint">Sunday (paid)</Pill>{" "}
+          <span className="ml-1">Attendance entry is optional on Sundays.</span>
+        </div>
+      ) : null}
+
       {view === "summary" ? (
         summaryLoading ? (
           <Spinner label="Loading summary…" />
@@ -352,6 +374,7 @@ export default function AttendancePage() {
                   <th className="px-4 py-3 font-medium">Check in</th>
                   <th className="px-4 py-3 font-medium">Check out</th>
                   <th className="px-4 py-3 font-medium">Shift</th>
+                  <th className="px-4 py-3 font-medium">Flags</th>
                   <th className="px-4 py-3 font-medium">Notes</th>
                 </tr>
               </thead>
@@ -419,6 +442,30 @@ export default function AttendancePage() {
                         </select>
                       </td>
                       <td className="px-4 py-2">
+                        {isSundayIso(date) && policy.sunday_paid_leave ? (
+                          <Pill tone="mint">Sunday (paid)</Pill>
+                        ) : !e.time_tracking_enabled ? (
+                          <span className="text-ink-soft">—</span>
+                        ) : (
+                          (() => {
+                            const flags = computeDayFlags(e, policy, date, {
+                              status: d.status,
+                              check_in: d.check_in || null,
+                              check_out: d.check_out || null,
+                            });
+                            const parts: string[] = [];
+                            if (flags.lateMinutes > 0) parts.push(`Late ${flags.lateMinutes}m`);
+                            if (flags.earlyLeaveMinutes > 0) parts.push(`Early ${flags.earlyLeaveMinutes}m`);
+                            if (flags.overtimeMinutes > 0) parts.push(`OT ${flags.overtimeMinutes}m`);
+                            return parts.length ? (
+                              <span className="text-[0.8rem] text-ink-soft">{parts.join(" · ")}</span>
+                            ) : (
+                              <span className="text-ink-soft">—</span>
+                            );
+                          })()
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
                         <input
                           className="field min-w-[9rem]"
                           value={d.notes}
@@ -430,7 +477,7 @@ export default function AttendancePage() {
                 })}
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-[0.9rem] text-ink-soft">
+                    <td colSpan={7} className="px-4 py-8 text-center text-[0.9rem] text-ink-soft">
                       No active employees. Add some on the Employees page first.
                     </td>
                   </tr>

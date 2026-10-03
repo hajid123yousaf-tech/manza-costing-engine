@@ -6,6 +6,7 @@ import {
   compactPrintFontSize,
   currentMonthInput,
   daysInMonth,
+  fetchCompanyPolicy,
   generateSalaryLine,
   monthInputToPeriod,
   monthLabel,
@@ -19,12 +20,14 @@ import {
 } from "@/lib/attendanceSalary";
 import { downloadSalaryLedgerExcel } from "@/lib/attendanceSalaryExcel";
 import { formatMoney, formatNumber } from "@/lib/format";
-import type {
-  AdvanceTransaction,
-  AttendanceRecord,
-  Employee,
-  SalaryLine,
-  SalaryPeriod,
+import {
+  DEFAULT_COMPANY_POLICY,
+  type AdvanceTransaction,
+  type AttendanceRecord,
+  type CompanyPolicy,
+  type Employee,
+  type SalaryLine,
+  type SalaryPeriod,
 } from "@/lib/types";
 import {
   Button,
@@ -80,6 +83,14 @@ export default function SalaryPage() {
   const [transactions, setTransactions] = useState<AdvanceTransaction[]>([]);
   const [dirty, setDirty] = useState(false);
   const [confirmingFinalize, setConfirmingFinalize] = useState(false);
+  const [policy, setPolicy] = useState<CompanyPolicy>(DEFAULT_COMPANY_POLICY);
+
+  useEffect(() => {
+    void (async () => {
+      const { policy: p } = await fetchCompanyPolicy();
+      setPolicy(p);
+    })();
+  }, []);
 
   const periodDate = monthInputToPeriod(monthInput);
   const finalized = period?.status === "finalized";
@@ -143,7 +154,9 @@ export default function SalaryPage() {
    * Rows shown/saved reflect each employee's current time_tracking_enabled
    * flag, not just what's stored — so toggling it off on the Employees page
    * self-heals a line generated before the toggle changed, without requiring
-   * a Regenerate.
+   * a Regenerate. Only short_time_deduction is zeroed this way: overtime_amount
+   * may include Sunday overtime, which is independent of time_tracking_enabled,
+   * so it's left for Regenerate to recompute instead.
    */
   const rows = useMemo(
     () =>
@@ -153,7 +166,7 @@ export default function SalaryPage() {
           if (!employee) return null;
           const editable: EditableSalaryFields = employee.time_tracking_enabled
             ? line
-            : { ...line, short_time_deduction: 0, overtime_amount: 0 };
+            : { ...line, short_time_deduction: 0 };
           const derived = recalcSalaryLine(editable, employee.pay_type === "monthly");
           return { line: { ...line, ...editable, ...derived }, employee };
         })
@@ -339,7 +352,7 @@ export default function SalaryPage() {
     }
 
     const generated = activeEmployees.map((e) =>
-      generateSalaryLine(e, periodDate, recordsByEmployee.get(e.id) ?? []),
+      generateSalaryLine(e, policy, periodDate, recordsByEmployee.get(e.id) ?? []),
     );
 
     const { error: upsertError } = await supabase.from("salary_lines").upsert(
@@ -612,22 +625,16 @@ export default function SalaryPage() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          {employee.time_tracking_enabled ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              disabled={finalized}
-                              className="field min-w-[5rem] text-right"
-                              value={editValue(line.overtime_amount)}
-                              onChange={(e) =>
-                                patch(line.employee_id, "overtime_amount", numOrZero(e.target.value))
-                              }
-                            />
-                          ) : (
-                            <span className="text-[0.75rem] text-ink-soft">
-                              Not tracked for this employee
-                            </span>
-                          )}
+                          <input
+                            type="number"
+                            step="0.01"
+                            disabled={finalized}
+                            className="field min-w-[5rem] text-right"
+                            value={editValue(line.overtime_amount)}
+                            onChange={(e) =>
+                              patch(line.employee_id, "overtime_amount", numOrZero(e.target.value))
+                            }
+                          />
                         </td>
                         <td className="px-3 py-2 text-right">
                           <input

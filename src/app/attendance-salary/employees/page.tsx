@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { fromTimeInputValue, toTimeInputValue } from "@/lib/attendanceSalary";
+import { fetchCompanyPolicy, formatTime12, fromTimeInputValue, toTimeInputValue } from "@/lib/attendanceSalary";
 import {
-  DEFAULT_SHIFT_TIMES,
+  DEFAULT_COMPANY_POLICY,
   PAY_TYPES,
   STAFF_CATEGORIES,
+  type CompanyPolicy,
   type Employee,
   type PayType,
   type StaffCategory,
@@ -38,6 +39,7 @@ interface NewEmployee {
   shift_end: string;
   time_tracking_enabled: boolean;
   grace_minutes: number;
+  sunday_overtime: boolean;
 }
 
 function blankNewEmployee(): NewEmployee {
@@ -48,10 +50,11 @@ function blankNewEmployee(): NewEmployee {
     pay_type: "monthly",
     monthly_salary: 0,
     daily_wage: 0,
-    shift_start: DEFAULT_SHIFT_TIMES.office.start,
-    shift_end: DEFAULT_SHIFT_TIMES.office.end,
+    shift_start: "",
+    shift_end: "",
     time_tracking_enabled: true,
     grace_minutes: 0,
+    sunday_overtime: false,
   };
 }
 
@@ -62,6 +65,7 @@ export default function EmployeesPage() {
   const [edits, setEdits] = useState<Record<string, Partial<Employee>>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(true);
+  const [policy, setPolicy] = useState<CompanyPolicy>(DEFAULT_COMPANY_POLICY);
 
   const [showAdd, setShowAdd] = useState(false);
   const [newEmp, setNewEmp] = useState<NewEmployee>(blankNewEmployee());
@@ -84,6 +88,13 @@ export default function EmployeesPage() {
     })();
   }, [load]);
 
+  useEffect(() => {
+    void (async () => {
+      const { policy: p } = await fetchCompanyPolicy();
+      setPolicy(p);
+    })();
+  }, []);
+
   const visible = employees.filter((e) => showInactive || e.is_active);
 
   function patch(id: string, key: keyof Employee, value: unknown) {
@@ -97,15 +108,9 @@ export default function EmployeesPage() {
     !!edits[id] && Object.keys(edits[id]).length > 0;
 
   function setCategory(id: string, category: StaffCategory) {
-    const defaults = DEFAULT_SHIFT_TIMES[category];
     setEdits((prev) => ({
       ...prev,
-      [id]: {
-        ...prev[id],
-        staff_category: category,
-        shift_start: defaults.start,
-        shift_end: defaults.end,
-      },
+      [id]: { ...prev[id], staff_category: category },
     }));
   }
 
@@ -127,10 +132,11 @@ export default function EmployeesPage() {
           payType === "monthly" ? Number(valueOf(e, "monthly_salary")) || 0 : null,
         daily_wage:
           payType === "daily" ? Number(valueOf(e, "daily_wage")) || 0 : null,
-        shift_start: fromTimeInputValue(shiftStart),
-        shift_end: fromTimeInputValue(shiftEnd),
+        shift_start: shiftStart ? fromTimeInputValue(shiftStart) : null,
+        shift_end: shiftEnd ? fromTimeInputValue(shiftEnd) : null,
         time_tracking_enabled: valueOf(e, "time_tracking_enabled"),
         grace_minutes: Number(valueOf(e, "grace_minutes")) || 0,
+        sunday_overtime: valueOf(e, "sunday_overtime"),
       })
       .eq("id", e.id);
     setSavingId(null);
@@ -163,10 +169,11 @@ export default function EmployeesPage() {
       pay_type: newEmp.pay_type,
       monthly_salary: newEmp.pay_type === "monthly" ? Number(newEmp.monthly_salary) || 0 : null,
       daily_wage: newEmp.pay_type === "daily" ? Number(newEmp.daily_wage) || 0 : null,
-      shift_start: fromTimeInputValue(newEmp.shift_start),
-      shift_end: fromTimeInputValue(newEmp.shift_end),
+      shift_start: newEmp.shift_start ? fromTimeInputValue(newEmp.shift_start) : null,
+      shift_end: newEmp.shift_end ? fromTimeInputValue(newEmp.shift_end) : null,
       time_tracking_enabled: newEmp.time_tracking_enabled,
       grace_minutes: newEmp.time_tracking_enabled ? Number(newEmp.grace_minutes) || 0 : 0,
+      sunday_overtime: newEmp.sunday_overtime,
       is_active: true,
     });
     setAdding(false);
@@ -223,16 +230,9 @@ export default function EmployeesPage() {
               <select
                 className="field"
                 value={newEmp.staff_category}
-                onChange={(e) => {
-                  const category = e.target.value as StaffCategory;
-                  const defaults = DEFAULT_SHIFT_TIMES[category];
-                  setNewEmp((r) => ({
-                    ...r,
-                    staff_category: category,
-                    shift_start: defaults.start,
-                    shift_end: defaults.end,
-                  }));
-                }}
+                onChange={(e) =>
+                  setNewEmp((r) => ({ ...r, staff_category: e.target.value as StaffCategory }))
+                }
               >
                 {STAFF_CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -293,17 +293,42 @@ export default function EmployeesPage() {
                 />
               </Field>
             )}
-            <Field label="Shift start">
+            <Field
+              label="Shift start"
+              hint={`Leave blank to use the company policy (${formatTime12(policy.shift_start)}).`}
+            >
               <TimePicker
                 value={newEmp.shift_start}
                 onChange={(v) => setNewEmp((r) => ({ ...r, shift_start: v }))}
               />
             </Field>
-            <Field label="Shift end">
+            <Field
+              label="Shift end"
+              hint={`Leave blank to use the company policy (${formatTime12(policy.shift_end)}).`}
+            >
               <TimePicker
                 value={newEmp.shift_end}
                 onChange={(v) => setNewEmp((r) => ({ ...r, shift_end: v }))}
               />
+            </Field>
+            <Field label="Sunday overtime">
+              <div className="inline-flex gap-1 rounded-full border border-hairline bg-canvas p-1">
+                {([{ v: false, l: "No" }, { v: true, l: "Yes" }] as const).map((opt) => (
+                  <button
+                    key={String(opt.v)}
+                    type="button"
+                    onClick={() => setNewEmp((r) => ({ ...r, sunday_overtime: opt.v }))}
+                    className={cn(
+                      "rounded-full px-3.5 py-1.5 text-[0.85rem] font-medium transition-colors",
+                      newEmp.sunday_overtime === opt.v
+                        ? "bg-ink text-white"
+                        : "text-ink-soft hover:text-ink",
+                    )}
+                  >
+                    {opt.l}
+                  </button>
+                ))}
+              </div>
             </Field>
             <div className="flex items-center pt-6">
               <label className="flex items-center gap-2 text-[0.9rem] text-ink">
@@ -364,6 +389,7 @@ export default function EmployeesPage() {
                   <th className="px-4 py-3 font-medium">Shift</th>
                   <th className="px-4 py-3 font-medium">Time tracking</th>
                   <th className="px-4 py-3 text-right font-medium">Grace (min)</th>
+                  <th className="px-4 py-3 font-medium">Sunday OT</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
@@ -471,6 +497,12 @@ export default function EmployeesPage() {
                             onChange={(v) => patch(e.id, "shift_end", v)}
                           />
                         </div>
+                        {!toTimeInputValue(valueOf(e, "shift_start")) &&
+                        !toTimeInputValue(valueOf(e, "shift_end")) ? (
+                          <p className="mt-1 text-[0.72rem] text-ink-soft">
+                            Policy: {formatTime12(policy.shift_start)} – {formatTime12(policy.shift_end)}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-2 text-center">
                         <input
@@ -497,6 +529,13 @@ export default function EmployeesPage() {
                         ) : (
                           <span className="block text-right text-ink-soft">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={valueOf(e, "sunday_overtime")}
+                          onChange={(ev) => patch(e.id, "sunday_overtime", ev.target.checked)}
+                        />
                       </td>
                       <td className="px-4 py-2">
                         {e.is_active ? (
@@ -531,7 +570,7 @@ export default function EmployeesPage() {
                 })}
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-[0.9rem] text-ink-soft">
+                    <td colSpan={12} className="px-4 py-8 text-center text-[0.9rem] text-ink-soft">
                       No employees yet. Add one above.
                     </td>
                   </tr>
